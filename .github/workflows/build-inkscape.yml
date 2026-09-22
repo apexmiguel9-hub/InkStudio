@@ -207,9 +207,10 @@ jobs:
       # en 4 archivos). En vez de rebuildear cairomm (requeriría
       # descargar tarball 1.16+), usamos la API C de cairo 1.18.6
       # (libcairo.a estática que SÍ tenemos) que es equivalente:
-      #   get_device_scale()  → cairo_surface_get_device_scale()
-      #   set_device_scale()  → cairo_surface_set_device_scale()
+      #   get_device_scale()  → cairo_surface_get_device_scale(surface, &x, &y)
+      #   set_device_scale()  → cairo_surface_set_device_scale(surface, x, y)
       # cobj() devuelve const cairo_surface_t* => const_cast necesario.
+      # get_device_scale devuelve void y escribe en out-params => variable local.
       - name: Parche upstream API cairomm (get/set_device_scale → C API, run #8)
         run: |
           set -euo pipefail
@@ -217,11 +218,18 @@ jobs:
           # 1) canvas-item-ctrl.cpp: 3 set_device_scale + 1 get_device_scale
           sed -i 's|surface->set_device_scale(\([^,]*\), \([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \2)|g' \
             src/display/control/canvas-item-ctrl.cpp
-          sed -i 's|_cache->get_device_scale()|cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(_cache->cobj()))|g' \
-            src/display/control/canvas-item-ctrl.cpp
+          # get_device_scale: necesita variable local (C API: void cairo_surface_get_device_scale(surface, &x, &y))
+          sed -i '/auto center_offset = (cache_size \* 0.5 \/ _cache->get_device_scale());/{
+            i\    double _dsx, _dsy; cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(_cache->cobj()), \&_dsx, \&_dsy); double _scale = _dsx;
+            s/_cache->get_device_scale()/_scale/
+          }' src/display/control/canvas-item-ctrl.cpp
+          # líneas 532-533: usar _scale ya calculado
+          sed -i 's|cache_size.x() / _cache->get_device_scale()|cache_size.x() / _scale|' src/display/control/canvas-item-ctrl.cpp
+          sed -i 's|cache_size.y() / _cache->get_device_scale()|cache_size.y() / _scale|' src/display/control/canvas-item-ctrl.cpp
           # 2) pattern-editor.cpp: get_device_scale
-          sed -i 's|item->pix->get_device_scale()|cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(item->pix->cobj()))|g' \
+          sed -i '/if (!item->pix || tile_size != item->pix->get_width() || scale != item->pix->get_device_scale())/i\        double _pix_scale; cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(item->pix->cobj()), \&_pix_scale, \&_pix_scale);' \
             src/ui/widget/pattern-editor.cpp
+          sed -i 's|scale != item->pix->get_device_scale()|scale != _pix_scale|' src/ui/widget/pattern-editor.cpp
           # 3) marker-combo-box.cpp: set_device_scale
           sed -i 's|surface->set_device_scale(\([^,]*\), \([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \2)|g' \
             src/ui/widget/style/marker-combo-box.cpp
@@ -397,17 +405,13 @@ jobs:
           # cairo/cairo.h: el pkg-config de cairomm da -I.../include/cairo pero
           # el header físico está en .../include/cairo/cairo.h => necesitamos
           # el padre .../include como -isystem para que #include <cairo/cairo.h> resuelva.
-          CAIRO_INC="$(pkg-config --cflags cairo 2>/dev/null | sed -n 's/^-I//p' | head -1)"
-          if [ -n "$CAIRO_INC" ]; then
-            CAIRO_INC_PARENT="$(dirname "$CAIRO_INC")"
-            EXTRA_CXX_FLAGS="-isystem $CAIRO_INC_PARENT"
-          else
-            EXTRA_CXX_FLAGS="-isystem $PWD/.libs/cairo/include"
-          fi
+          # Usamos ruta ABSOLUTA conocida del harvest (no pkg-config, que da .../include/cairo)
+          EXTRA_CXX_FLAGS="-isystem $PWD/.libs/cairo/include"
           cmake -S inkscape -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/android-aarch64.cmake" \
             -DCMAKE_ANDROID_NDK="$HOME/android-ndk-${{ inputs.ndk }}" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_FLAGS="$EXTRA_CXX_FLAGS" \
             -DCMAKE_CXX_FLAGS="$EXTRA_CXX_FLAGS" \
             -DWITH_POPPLER=OFF -DENABLE_POPPLER_CAIRO=OFF \
             -DWITH_LIBWPG=OFF -DWITH_LIBVISIO=OFF -DWITH_LIBCDR=OFF \
