@@ -96,22 +96,19 @@ jobs:
         run: |
           set -euo pipefail
           DEST="android/app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$DEST"
           
           # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
           echo "=== Clonando lib-inkscape-android_arm64 (tier1+tier2) ==="
           git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
-          find /tmp/our-libs -name "*.so" -o -name "*.so.*" | while read so; do
-            cp -v "$so" "$DEST/"
-          done
+          find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) -exec cp -v {} "$DEST/" \;
           
           # 2. Blender libs (subset LFS que ya usa build-inkscape)
           echo "=== Clonando blender lib-android_arm64 (subset LFS) ==="
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://projects.blender.org/blender/lib-android_arm64.git /tmp/blender-libs
           cd /tmp/blender-libs
           git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
-          find /tmp/blender-libs -name "*.so" -o -name "*.so.*" | while read so; do
-            cp -v "$so" "$DEST/"
-          done
+          find /tmp/blender-libs -type f \( -name "*.so" -o -name "*.so.*" \) -exec cp -v {} "$DEST/" \;
           
           echo "=== Total .so en jniLibs ==="
           ls -la "$DEST/" | wc -l
