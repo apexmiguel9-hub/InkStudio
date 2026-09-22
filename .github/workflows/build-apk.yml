@@ -95,7 +95,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          WORKSPACE="${{ github.workspace }}"
+          DEST="$WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$DEST"
           
           # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
