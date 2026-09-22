@@ -119,8 +119,6 @@ jobs:
           for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so libcairo.so libpango-1.0.so libglib-2.0.so libgobject-2.0.so libgio-2.0.so libgmodule-2.0.so libfreetype.so libharfbuzz.so libfribidi.so libpixman-1.so libepoxy.so libgraphene-1.0.so libpng16.so libjpeg.so libxml2.so libz.so liblzma.so libzstd.so libbrotlidec.so libbrotlicommon.so libexpat.so libpcre2-8.so libffi.so libintl.so libiconv.so liblcms2.so; do
             [ -f "$DEST/$lib" ] && echo "  ✓ $lib" || echo "  ✗ $lib FALTA"
           done
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       # Verificar que bajaron los .so
       - name: Verify native libs
