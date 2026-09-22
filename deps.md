@@ -56,6 +56,18 @@ UNIX/Android cae en el fallback `stacktrace_basic` (nuestra `.a` ✓) porque
 (los encontramos → bloque saltado). `WITH_CROSSINK` es de Crossroads/MSYS2 —
 nuestro camino es el toolchain CMake estándar.
 
+## Fuentes
+
+- **Inkscape**: `https://gitlab.com/inkscape/inkscape.git` (fuente viva;
+  `master` = `2882d84`, 2026-09-21). **`github.com/inkscape/inkscape` está
+  STALE desde 2022-03-03** y su tree ni siquiera trae `.gitmodules` ni
+  `src/3rdparty/` → run #2 del port murió con `pathspec ... did not match any
+  file(s) known to git` en los 4 submodules. `actions/checkout` sólo clona de
+  GitHub → el workflow usa `git clone` directo a gitlab (soporta rama/tag
+  shallow; sha vía `--filter=blob:none`).
+- Submodules requeridos: `2geom`, `libcroco`, `libdepixelize`, `libuemf`
+  (todos gitlab); `po`/`extensions`/`themes`/`capypdf` NO en el primer pase.
+
 ## Historial de runs (libs hermanas)
 
 tier1 = run 8 ✓ · tier2: …→ 19 (cairo FT + gtk4 ✓) → 20 (sigc++ ✓/glibmm

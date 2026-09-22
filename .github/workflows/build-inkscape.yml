@@ -111,14 +111,30 @@ jobs:
           done
           echo "OK: harvest crítica ($(find .libs -type d -path '*/lib/pkgconfig' | wc -l) dirs pkgconfig)"
 
-      - name: Inkscape (checkout externo)
-        uses: actions/checkout@v4
-        with:
-          repository: inkscape/inkscape
-          ref: ${{ inputs.ref }}
-          path: inkscape
-          fetch-depth: 1
-          submodules: false
+      # La fuente viva es gitlab.com/inkscape/inkscape (master = 2882d84,
+      # 2026-09-21, con .gitmodules real). github.com/inkscape/inkscape está
+      # STALE desde 2022-03-03 y ni siquiera trae src/3rdparty/ ni
+      # .gitmodules => run #2: los 4 pathspecs de submodule fallaron con
+      # "did not match any file(s) known to git". actions/checkout sólo sabe
+      # clonar de GitHub, así que aquí va un git clone directo a gitlab.
+      - name: Inkscape (clone desde gitlab, la fuente viva)
+        run: |
+          set -o pipefail
+          REF="${{ inputs.ref }}"
+          # rama o tag: clone shallow directo (lo normal y rápido)
+          if ! git clone --depth 1 --branch "$REF" \
+                 https://gitlab.com/inkscape/inkscape.git inkscape 2>/dev/null; then
+            # sha concreto: no se puede --branch un sha => clone blobless
+            # (--filter=blob:none: historia completa, blobs on-demand) y checkout
+            rm -rf inkscape
+            git clone --filter=blob:none https://gitlab.com/inkscape/inkscape.git inkscape
+          fi
+          cd inkscape
+          git checkout "$REF" 2>/dev/null || true   # el --branch ya lo dejó en el ref
+          echo "Inkscape = $(git log -1 --format='%h %ad %s' --date=short)"
+          test -f .gitmodules || { echo "ERROR: sin .gitmodules (¿ref equivocado?)"; exit 1; }
+          grep -q 'src/3rdparty/2geom' .gitmodules \
+            || { echo "ERROR: .gitmodules sin 2geom"; exit 1; }
 
       - name: Submodules de build (copias internas con fallback)
         run: |
