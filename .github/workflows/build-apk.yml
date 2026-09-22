@@ -50,7 +50,7 @@ jobs:
         run: |
           set -euo pipefail
           RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
-          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$DEST"
           ARTIFACT_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs/$RUN_ID/artifacts \
             --jq '.artifacts[] | select(.name=="inkscape-android-arm64-binaries") | .id')
@@ -64,13 +64,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       # ---------------------------------------------------------
-      # 3. Clonar dependencias + copiar .so Y headers (ruta CORRECTA)
+      # 3. Clonar dependencias + copiar .so Y headers (RUTAS ABSOLUTAS)
       # ---------------------------------------------------------
       - name: Clone dependency libs & copy .so + headers
         run: |
           set -euo pipefail
-          DEST="android/app/src/main/jniLibs/arm64-v8a"
-          INCLUDE_DEST="android/app/src/main/cpp/include"
+          ROOT="$GITHUB_WORKSPACE"
+          DEST="$ROOT/android/app/src/main/jniLibs/arm64-v8a"
+          INCLUDE_DEST="$ROOT/android/app/src/main/cpp/include"
           mkdir -p "$DEST" "$INCLUDE_DEST"
 
           # 1. Nuestras libs (tier1+tier2)
@@ -108,7 +109,7 @@ jobs:
       - name: Verify native libs
         run: |
           set -euo pipefail
-          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so; do
             [ -f "$DEST/$lib" ] || { echo "ERROR: falta $lib"; exit 1; }
           done
@@ -125,7 +126,7 @@ jobs:
           cache: 'gradle'
 
       # ---------------------------------------------------------
-      # 6. NDK r30 OFICIAL + CONFIG GRADLE EXPLÍCITO (RUTA CORRECTA)
+      # 6. NDK r30 OFICIAL + CONFIG GRADLE EXPLÍCITO
       # ---------------------------------------------------------
       - name: Setup Android SDK + NDK r30
         run: |
@@ -165,7 +166,7 @@ jobs:
           echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
 
           # -----------------------------------------------------
-          # ESCRIBIR local.properties EXPLÍCITO (RUTA CORRECTA)
+          # ESCRIBIR local.properties EXPLÍCITO
           # -----------------------------------------------------
           echo "ndk.dir=$NDK_DIR" > "$GITHUB_WORKSPACE/android/local.properties"
           echo "sdk.dir=$ANDROID_HOME" >> "$GITHUB_WORKSPACE/android/local.properties"
@@ -184,7 +185,7 @@ jobs:
           restore-keys: gradle-
 
       # ---------------------------------------------------------
-      # 8. Permisos gradlew
+      # 7. Permisos gradlew
       # ---------------------------------------------------------
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
