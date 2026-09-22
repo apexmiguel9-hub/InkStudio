@@ -1,0 +1,17 @@
+<resources>
+    <string name="app_name">InkStudio</string>
+    <string name="menu_actions">Acciones</string>
+    <string name="new_document">Nuevo documento</string>
+    <string name="open_file">Abrir archivo</string>
+    <string name="save_file">Guardar</string>
+    <string name="save_as">Guardar como</string>
+    <string name="export_png">Exportar PNG</string>
+    <string name="export_svg">Exportar SVG</string>
+    <string name="settings">Configuración</string>
+    <string name="about">Acerca de</string>
+    <string name="loading_inkscape">Inicializando Inkscape…</string>
+    <string name="error_init">Error al inicializar el motor de Inkscape</string>
+    <string name="unsaved_changes">Hay cambios sin guardar. ¿Salir de todos modos?</string>
+    <string name="discard">Descartar</string>
+    <string name="cancel">Cancelar</string>
+</resources>
