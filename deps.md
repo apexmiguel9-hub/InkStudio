@@ -180,6 +180,13 @@ submodule `capypdf` + `WITH_CAPYPDF=ON`.
 - **#6** `35742501729`: re-run de **confirmación de log** (despachada SIN los
   fixes, para capturar el detalle exacto de ambos errores) ⇒ mismos 3 mensajes,
   detalle leído y fixes aplicados en esta tanda.
+- **#7** `35745051541`: el parche CapyPDF **✓ en CI** y la normalización de
+  `.libs` **✓** (los 5 `.pc` rotos reescritos), pero la puerta era **demasiado
+  ancha**: exigía 0 `/home/runner` también en `pc-overlay/`, donde
+  `gen-pc.sh:22` emite `prefix=$B/$sub` = ruta absoluta **del run actual**
+  (válida y regenerada cada run) ⇒ falso positivo ×15. Puerta estrechada a
+  `.libs` sólo (los commiteados de otra CI = stale); validez de pc-overlay la
+  cubre el pre-flight de `-I`/`-L`.
 
 ## Historial de runs (libs hermanas)
 

@@ -223,12 +223,17 @@ jobs:
               "$pc"
             echo "  normalizado: $pc"
           done
-          # gate: ni una ruta absoluta del runner en NINGÚN .pc de los dos árboles
-          if grep -rl '/home/runner' .libs pc-overlay --include='*.pc' 2>/dev/null; then
-            echo "ERROR: quedan .pc con rutas absolutas del runner (listados arriba)"
+          # gate: en .libs (artefactos COMMITEADOS de la CI de las libs) ni un
+          # absoluto del runner => cualquier /home/runner ahí es de OTRA máquina
+          # = stale. Exento pc-overlay: gen-pc.sh:22 emite prefix=$B/$sub con la
+          # ruta ABSOLUTA DEL RUN ACTUAL ($PWD/.blender-libs, tirado del LFS antes)
+          # y se regenera en CADA run => válido por diseño (política: absoluto
+          # calculado a runtime); su validez la exige el pre-flight de -I/-L.
+          if grep -rl '/home/runner' .libs --include='*.pc' 2>/dev/null; then
+            echo "ERROR: quedan .pc de .libs con rutas absolutas del runner (listados arriba)"
             exit 1
           fi
-          echo "OK: .pc relocatables (0 rutas absolutas del runner)"
+          echo "OK: .pc de .libs relocatables (0 rutas absolutas del runner)"
 
       - name: Entorno (PKG_CONFIG_LIBDIR + CMAKE_PREFIX_PATH) + pre-flight pkg-config
         run: |
