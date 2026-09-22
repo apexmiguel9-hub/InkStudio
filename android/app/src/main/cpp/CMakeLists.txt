@@ -18,19 +18,20 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Include dirs para headers de Inkscape/GTK
 # Headers copiados a ${CMAKE_SOURCE_DIR}/include/ (android/app/src/main/cpp/include/)
-include_directories(
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/include/gtk-4.0
-    ${CMAKE_SOURCE_DIR}/include/glib-2.0
-    ${CMAKE_SOURCE_DIR}/include/cairo
-    ${CMAKE_SOURCE_DIR}/include/pango-1.0
-    # Fallback: también buscar en jniLibs por si acaso
-    ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include
-    ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/gtk-4.0
-    ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/glib-2.0
-    ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/cairo
-    ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/pango-1.0
-)
+include_directories(${CMAKE_SOURCE_DIR}/include)
+
+# Añadir automáticamente TODOS los subdirectorios de include/
+# (gtk-4.0, glib-2.0, pango-1.0, cairo, harfbuzz, freetype2, fontconfig, ...)
+file(GLOB _INKSCAPE_INCLUDE_SUBDIRS LIST_DIRECTORIES true ${CMAKE_SOURCE_DIR}/include/*)
+foreach(_dir IN LISTS _INKSCAPE_INCLUDE_SUBDIRS)
+    if(IS_DIRECTORY "${_dir}")
+        include_directories("${_dir}")
+        message(STATUS "=== Include dir: ${_dir} ===")
+    endif()
+endforeach()
+
+# Fallback: también buscar en jniLibs por si acaso
+include_directories(${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include)
 
 # Link libraries (prebuilt .so/.a en jniLibs)
 link_directories(${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a)
