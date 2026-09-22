@@ -20,13 +20,27 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Headers copiados a ${CMAKE_SOURCE_DIR}/include/ (android/app/src/main/cpp/include/)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Añadir automáticamente TODOS los subdirectorios de include/
-# (gtk-4.0, glib-2.0, pango-1.0, cairo, harfbuzz, freetype2, fontconfig, ...)
+# Añadir automáticamente los subdirectorios de include/
+# PERO excluyendo dirs que contienen headers con nombre de sistema en su raíz
+# (p.ej. textstyle/stdbool.h, manifold/math.h -> shadowean los del NDK/libc++)
 file(GLOB _INKSCAPE_INCLUDE_SUBDIRS LIST_DIRECTORIES true ${CMAKE_SOURCE_DIR}/include/*)
+set(_SHADOW_HEADERS stdint.h stdbool.h stdarg.h math.h stdlib.h stdio.h string.h
+    limits.h float.h stddef.h stdatomic.h stdalign.h inttypes.h wchar.h ctype.h
+    errno.h assert.h stdio.h locale.h setjmp.h signal.h time.h)
 foreach(_dir IN LISTS _INKSCAPE_INCLUDE_SUBDIRS)
     if(IS_DIRECTORY "${_dir}")
-        include_directories("${_dir}")
-        message(STATUS "=== Include dir: ${_dir} ===")
+        set(_skip FALSE)
+        foreach(_hdr IN LISTS _SHADOW_HEADERS)
+            if(EXISTS "${_dir}/${_hdr}")
+                set(_skip TRUE)
+                message(STATUS "=== SKIP include dir (shadow header ${_hdr}): ${_dir} ===")
+                break()
+            endif()
+        endforeach()
+        if(NOT _skip)
+            include_directories("${_dir}")
+            message(STATUS "=== Include dir: ${_dir} ===")
+        endif()
     endif()
 endforeach()
 
