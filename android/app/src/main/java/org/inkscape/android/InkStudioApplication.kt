@@ -20,45 +20,11 @@ class InkStudioApplication : Application() {
     private fun loadNativeLibraries() {
         if (sNativeLoaded) return
 
-        // Orden CRÍTICO: dependencias primero
+        // SOLO libs que EXISTEN como .so en jniLibs/
+        // El resto (cairo, pango, glib, harfbuzz, freetype, etc.) se linkean ESTÁTICAMENTE
+        // dentro de libgtk-4.so (28MB) y libinkscape.so
         val libs = listOf(
-            "c++_shared",          // libc++_shared.so (si no usamos c++_static)
-            "z",                   // libz.so
-            "xml2",                // libxml2.so
-            "png16",               // libpng16.so
-            "jpeg",                // libjpeg.so
-            "freetype",            // libfreetype.so
-            "harfbuzz",            // libharfbuzz.so
-            "fribidi",             // libfribidi.so
-            "pixman-1",            // libpixman-1.so
-            "epoxy",               // libepoxy.so
-            "graphene-1.0",        // libgraphene-1.0.so
-            "gobject-2.0",         // libgobject-2.0.so
-            "glib-2.0",            // libglib-2.0.so
-            "gio-2.0",             // libgio-2.0.so
-            "gmodule-2.0",         // libgmodule-2.0.so
-            "pcre2-8",             // libpcre2-8.so
-            "ffi",                 // libffi.so
-            "intl",                // libintl.so (gettext)
-            "iconv",               // libiconv.so
-            "lcms2",               // liblcms2.so
-            "brotlidec",           // libbrotlidec.so
-            "brotlicommon",        // libbrotlicommon.so
-            "expat",               // libexpat.so
-            "zstd",                // libzstd.so
-            "cairo",               // libcairo.so
-            "cairo-gobject",       // libcairo-gobject.so
-            "pango-1.0",           // libpango-1.0.so
-            "pangocairo-1.0",      // libpangocairo-1.0.so
-            "pangoft2-1.0",        // libpangoft2-1.0.so
-            "gdk_pixbuf-2.0",      // libgdk_pixbuf-2.0.so
-            "gtk-4",               // libgtk-4.so (shared, 28MB)
-            "sigc-3.0",            // libsigc-3.0.so
-            "glibmm-2.68",         // libglibmm-2.68.so
-            "giomm-2.68",          // libgiomm-2.68.so
-            "cairomm-1.16",        // libcairomm-1.16.so
-            "pangomm-2.48",        // libpangomm-2.48.so
-            "gtkmm-4.0",           // libgtkmm-4.0.so
+            "gtk-4",               // libgtk-4.so (shared, 28MB) - DEBE estar
             "inkscape",            // libinkscape.so (nuestra lib principal)
             "inkview",             // libinkview.so
             "inkscape_base",       // libinkscape_base.so
@@ -73,17 +39,19 @@ class InkStudioApplication : Application() {
             "boost_stacktrace_basic", // libboost_stacktrace_basic.so
         )
 
+        var loaded = 0
         for (lib in libs) {
             try {
                 System.loadLibrary(lib)
                 Log.d(TAG, "Loaded: $lib")
+                loaded++
             } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "Optional lib not found (may be linked statically): $lib")
+                Log.w(TAG, "Lib not found (linked statically or missing): $lib")
             }
         }
 
         sNativeLoaded = true
-        Log.i(TAG, "All native libraries loaded")
+        Log.i(TAG, "Native libraries loaded: $loaded/${libs.size}")
     }
 
     companion object {
