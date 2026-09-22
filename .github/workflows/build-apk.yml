@@ -64,7 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       # ---------------------------------------------------------
-      # 3. Clonar dependencias + copiar .so Y headers (RUTAS ABSOLUTAS)
+      # 3. Clonar dependencias + copiar .so Y headers (ROBUSTO)
       # ---------------------------------------------------------
       - name: Clone dependency libs & copy .so + headers
         run: |
@@ -79,8 +79,8 @@ jobs:
           git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
-            -exec cp -v {} "$DEST/" \;
-          find /tmp/our-libs -type d -name "include" | while read inc; do
+            -exec cp -v {} "$DEST/" \; 2>/dev/null || true
+          find /tmp/our-libs -type d -name "include" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
 
@@ -91,8 +91,8 @@ jobs:
           git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
           find /tmp/blender-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             -path "*/lib/*" ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
-            -exec cp -v {} "$DEST/" \;
-          find /tmp/blender-libs -type d -name "include" | while read inc; do
+            -exec cp -v {} "$DEST/" \; 2>/dev/null || true
+          find /tmp/blender-libs -type d -name "include" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
 
@@ -185,7 +185,7 @@ jobs:
           restore-keys: gradle-
 
       # ---------------------------------------------------------
-      # 7. Permisos gradlew
+      # 8. Permisos gradlew
       # ---------------------------------------------------------
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
