@@ -407,12 +407,18 @@ jobs:
           # el padre .../include como -isystem para que #include <cairo/cairo.h> resuelva.
           # Usamos ruta ABSOLUTA conocida del harvest (no pkg-config, que da .../include/cairo)
           EXTRA_CXX_FLAGS="-isystem $PWD/.libs/cairo/include"
+          # libs faltantes en el link (run #11): intl (gettext), iconv (libiconv), zstd
+          # están en el harvest pero CMake no los linkea automáticamente.
+          EXTRA_LINK_FLAGS="-L$PWD/.libs/gettext/lib -lintl -L$PWD/.libs/libiconv/lib -liconv -L$PWD/.libs/zstd/lib -lzstd"
           cmake -S inkscape -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/android-aarch64.cmake" \
             -DCMAKE_ANDROID_NDK="$HOME/android-ndk-${{ inputs.ndk }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_FLAGS="$EXTRA_CXX_FLAGS" \
             -DCMAKE_CXX_FLAGS="$EXTRA_CXX_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="$EXTRA_LINK_FLAGS" \
+            -DCMAKE_SHARED_LINKER_FLAGS="$EXTRA_LINK_FLAGS" \
+            -DCMAKE_MODULE_LINKER_FLAGS="$EXTRA_LINK_FLAGS" \
             -DWITH_POPPLER=OFF -DENABLE_POPPLER_CAIRO=OFF \
             -DWITH_LIBWPG=OFF -DWITH_LIBVISIO=OFF -DWITH_LIBCDR=OFF \
             -DWITH_LIBSPELLING=OFF -DWITH_GSOURCEVIEW=OFF \
