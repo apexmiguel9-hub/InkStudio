@@ -200,6 +200,52 @@ jobs:
           pkg-config --exists 'sigc++-3.0 >= 3.6'
           echo "OK: los 16 módulos + 6 version pins de Inkscape resuelven"
 
+      # run #3 murió en find_package(Boost 1.19.0 REQUIRED) (línea 371).
+      # Causa DOBLE verificada:
+      #  1) inkscape/CMakeLists.txt:4-5 fuerza
+      #       if(POLICY CMP0167) cmake_policy(SET CMP0167 NEW)
+      #     => en CMake >= 3.30 find_package(Boost) va DIRECTO a config mode
+      #        y NO carga ningún FindBoost.cmake (por eso no hubo warning de
+      #        "policy not set": sí está seteada).
+      #  2) el boost de Blender trae headers+.a pero NO su BoostConfig.cmake.
+      # Mismo patrón que gen-pc.sh: generar la capa que el consumidor exige,
+      # sin reconstruir. Se instala donde el propio boost la instalaría
+      # (<prefix>/lib/cmake/boost-<ver>/, con la versión LEÍDA del
+      # version.hpp => sin hardcode) => visible por CMAKE_PREFIX_PATH y
+      # BOOST_ROOT aunque CMake resetee Boost_DIR entre las 3 llamadas; además
+      # -DBoost_DIR como vía rápida, y FindBoost.cmake de respaldo por si se
+      # apunta un ref SIN la política (modo módulo). Testado localmente en
+      # ambos modos con las 3 llamadas exactas de Inkscape (ALL-GREEN).
+      - name: Shims Boost (BoostConfig p/ CMP0167-NEW + FindBoost respaldo)
+        run: |
+          set -euo pipefail
+          if grep -q 'CMP0167' inkscape/CMakeLists.txt; then
+            echo "nota: este ref fuerza CMP0167=NEW => manda BoostConfig.cmake"
+          else
+            echo "nota: este ref NO toca CMP0167 => módulo: manda el respaldo FindBoost"
+          fi
+          # versión real del boost harvesteado (108700 => 1.87.0), sin hardcode
+          VH=.libs/boost/include/boost/version.hpp
+          test -f "$VH" || { echo "ERROR: falta $VH"; exit 1; }
+          V="$(sed -n 's/^#define BOOST_VERSION[[:space:]]\+\([0-9]\+\)$/\1/p' "$VH")"
+          [ -n "$V" ] || { echo "ERROR: BOOST_VERSION ilegible en $VH"; exit 1; }
+          MAJ=$((V / 100000)); MIN=$(( (V / 100) % 100 )); PAT=$((V % 100))
+          D="$PWD/.libs/boost/lib/cmake/boost-${MAJ}.${MIN}.${PAT}"
+          mkdir -p "$D"
+          cp scripts/cmake/BoostConfig.cmake \
+             scripts/cmake/BoostConfigVersion.cmake \
+             scripts/cmake/boost-find-core.cmake "$D/"
+          for f in BoostConfig.cmake BoostConfigVersion.cmake boost-find-core.cmake; do
+            test -f "$D/$f" || { echo "ERROR: no se copió $D/$f"; exit 1; }
+          done
+          echo "BoostConfig instalado en $D (boost ${MAJ}.${MIN}.${PAT})"
+          # respaldo del modo módulo (CMakeLists.txt:23 lo mete en MODULE_PATH)
+          grep -q 'CMAKE_MODULE_PATH.*CMakeScripts/Modules' inkscape/CMakeLists.txt \
+            || { echo "ERROR: CMAKE_MODULE_PATH ya no apunta a CMakeScripts/Modules"; exit 1; }
+          cp scripts/cmake/FindBoost.cmake inkscape/CMakeScripts/Modules/
+          test -f inkscape/CMakeScripts/Modules/FindBoost.cmake
+          echo "respaldo FindBoost instalado en inkscape/CMakeScripts/Modules"
+
       - name: CMake configure
         id: cfg
         run: |
@@ -217,6 +263,7 @@ jobs:
             -DWITH_IMAGE_MAGICK=OFF -DWITH_GRAPHICS_MAGICK=OFF \
             -DWITH_GNU_READLINE=OFF -DWITH_CAPYPDF=OFF -DWITH_NLS=OFF \
             -DBOOST_ROOT="$PWD/.libs/boost" -DBoost_NO_SYSTEM_PATHS=ON \
+            -DBoost_DIR="$PWD/scripts/cmake" \
             2>&1 | tee configure.log
 
       - name: CMake build

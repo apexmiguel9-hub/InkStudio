@@ -68,6 +68,27 @@ nuestro camino es el toolchain CMake estándar.
 - Submodules requeridos: `2geom`, `libcroco`, `libdepixelize`, `libuemf`
   (todos gitlab); `po`/`extensions`/`themes`/`capypdf` NO en el primer pase.
 
+## Boost (lección run #3 del port)
+
+`find_package(Boost 1.19.0 REQUIRED)` (DefineDependsandFlags:371) falló con
+*"By not providing FindBoost.cmake... asked ... a package configuration file"*.
+Causa **doble** verificada:
+
+1. `inkscape/CMakeLists.txt:4-5` fuerza `cmake_policy(SET CMP0167 NEW)` → en
+   CMake ≥ 3.30 el `find_package(Boost)` va **directo a config mode** y jamás
+   carga un `FindBoost.cmake` (por eso no hubo warning de "policy not set").
+2. El boost de Blender (1.87.0) trae `include/` + `libboost_stacktrace_basic.a`
+   pero **sin `BoostConfig.cmake`**.
+
+Fix (`scripts/cmake/`, testado localmente en **ambos** modos con las 3
+llamadas exactas de Inkscape → ALL-GREEN): lógica única en
+`boost-find-core.cmake` + `BoostConfig.cmake`/`BoostConfigVersion.cmake`
+(config, primario — el workflow lo instala en `<boost>/lib/cmake/boost-<ver>/`
+con versión **leída del `version.hpp`**, sin hardcode, + `-DBoost_DIR`) +
+`FindBoost.cmake` de respaldo (modo módulo, para refs sin la política).
+Semántica: el call 373 (`stacktrace_backtrace`, no disponible) deja
+`BOOST_FOUND=FALSE` → Inkscape cae al 378 con `stacktrace_basic` = nuestra `.a`.
+
 ## Historial de runs (libs hermanas)
 
 tier1 = run 8 ✓ · tier2: …→ 19 (cairo FT + gtk4 ✓) → 20 (sigc++ ✓/glibmm
