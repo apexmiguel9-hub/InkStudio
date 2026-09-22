@@ -176,10 +176,23 @@ jobs:
             yes | sdkmanager "build-tools;34.0.0" || true
           fi
           
-          # NDK: usar el que ya tenemos del build-inkscape (r30)
-          # No instalar NDK adicional, usamos el del sistema
+          # Instalar NDK r30 via sdkmanager (crea source.properties que AGP requiere)
+          # El NDK manual descargado no tiene source.properties => AGP lo rechaza
+          if [ ! -d "$ANDROID_HOME/ndk/26.1.10909125" ] && [ ! -d "$ANDROID_HOME/ndk/25.1.8937393" ]; then
+            echo "Instalando NDK r30 (26.1.10909125) via sdkmanager..."
+            yes | sdkmanager "ndk;26.1.10909125" || true
+          fi
+          
+          # Detectar NDK instalado
+          NDK_PATH=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1 | xargs -r basename)
+          if [ -n "$NDK_PATH" ]; then
+            echo "NDK encontrado: $NDK_PATH"
+            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_PATH" >> "$GITHUB_ENV"
+          else
+            echo "WARN: No se encontró NDK instalado, usando fallback"
+            echo "ANDROID_NDK_HOME=$HOME/android-ndk-r30" >> "$GITHUB_ENV"
+          fi
           echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r30" >> "$GITHUB_ENV"
 
       - name: Cache Gradle
         uses: actions/cache@v4
