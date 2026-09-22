@@ -98,7 +98,11 @@ jobs:
           WORKSPACE="${{ github.workspace }}"
           DEST="$WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$DEST"
-          INCLUDE_DEST="$DEST/../include"
+          # CMake busca en: ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include
+          # CMAKE_SOURCE_DIR = android/app/src/main/cpp
+          # ../../../ = android/app/
+          # => android/app/jniLibs/arm64-v8a/include
+          INCLUDE_DEST="$WORKSPACE/android/app/jniLibs/arm64-v8a/include"
           mkdir -p "$INCLUDE_DEST"
           
           # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
@@ -108,7 +112,7 @@ jobs:
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
             -exec cp -v {} "$DEST/" \;
-          # Copiar headers (include/)
+          # Copiar headers (include/) -> ruta que CMake espera
           find /tmp/our-libs -type d -name "include" | while read inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
@@ -123,7 +127,7 @@ jobs:
             -path "*/lib/*" \
             ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
             -exec cp -v {} "$DEST/" \;
-          # Copiar headers de Blender
+          # Copiar headers de Blender -> ruta que CMake espera
           find /tmp/blender-libs -type d -name "include" | while read inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
