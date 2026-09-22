@@ -71,7 +71,8 @@ nuestro camino es el toolchain CMake estándar.
   install(DIRECTORY)" y era **falso**); `po` gateado por `NLS=OFF` (la run #4
   pasó de largo de `po` ✓), `extensions` sólo `install(DIRECTORY)` (sin paso
   install en el workflow — al empaquetar el APK sí hará falta), `capypdf`
-  con `WITH_CAPYPDF=OFF` (la run #4 procesó `src/` entero sin quejarse ✓).
+  con `WITH_CAPYPDF=OFF` (**pero ojo**: el OFF necesita además el parche de la
+  lección de abajo — sin él el generate muere pidiendo el target igualmente).
 
 ## Boost (lecciones runs #3 y #4 del port)
 
@@ -115,6 +116,49 @@ máxima en el toolchain) y una **puerta** exige `android-ndk-<ver>/` en
 `CMAKE_C_COMPILER` dentro de `configure.log`. Riesgo si no se arreglaba:
 mezclar libc++/clang r27 en el port con libs construidas con r30.
 
+## `.pc` con rutas absolutas (lección runs #5/#6 del port)
+
+`pkg-config --exists` **NO valida rutas** ⇒ el pre-flight pasó y el fallo sólo
+estalló en el *generate*: `Imported target "PkgConfig::ICU_UC" includes
+non-existent path ".../lib-inkscape-android_arm64/.work/staging/icu/include"`
+×2. **Raíz en la repo de libs** (`build/build.sh` harvest): normalizaba con
+`s|^prefix=.*|prefix=${pcfiledir}/../..|` — **no matchea `prefix = ` con
+espacios** (estilo ICU ⇒ `icu-uc/icu-io/icu-i18n.pc` rotos) y `gsl.pc` lleva
+rutas absolutas **incrustadas literalmente** en `exec_prefix/libdir/
+includedir/Libs/Cflags` (no derivan de `${prefix}` ⇒ aunque el prefix
+matchee, sigue roto). `fontconfig.pc` sólo las tiene en `sysconfdir` etc.
+(no entran en Cflags ⇒ no bloquean, pero se normalizan igual).
+
+- **Fix port**: paso *pc overlay* reescribe cualquier
+  `/home/runner/.../staging/<name>` de **todos** los `.pc` de `.libs` a
+  `${pcfiledir}/../..[/sufijo]` (2 reglas sed, testado contra pkg-config real
+  con la estructura `<name>/lib/pkgconfig/`) + gate `grep /home/runner` sobre
+  `.libs` **y** `pc-overlay`.
+- **Fix raíz** (repo libs): mismo sed de 2 reglas en `build.sh` (sustituye al
+  `^prefix=` no-espaciado) para que el próximo harvest nazca limpio.
+- **Defensa**: el pre-flight ahora comprueba que **todos** los `-I`/`-L` que
+  resuelvan `--cflags`/`--libs` apuntan a dirs reales (19 módulos) → esta
+  clase entera de bug muere ANTES de cmake.
+
+## Generator expression con variable literal (lección runs #5/#6 del port)
+
+`src/CMakeLists.txt:339`:
+
+```cmake
+$<$<BOOL:WITH_CAPYPDF>:Inkscape::CapyPDF>   # BUG upstream
+```
+
+Las genexps **no expanden variables**: `WITH_CAPYPDF` es un *string literal* y
+`$<BOOL:<string-no-falso>> = 1` ⇒ el link al target se exige **siempre**, pero
+el target sólo se crea dentro de `if(WITH_CAPYPDF)`
+(`DefineDependsandFlags.cmake:195`) ⇒ con `-DWITH_CAPYPDF=OFF` el generate
+muere con *"Target … links to Inkscape::CapyPDF but the target was not found"*.
+Barido completo del árbol: es el **único** `$<BOOL:VAR>` literal (el resto de
+opciones OFF no lo sufren). Fix: parche al clone efímero
+`BOOL:WITH_CAPYPDF>` → `BOOL:${WITH_CAPYPDF}>` (`${...}` SÍ se expande al
+parsear ⇒ `$<BOOL:OFF>` = 0) + 2 gates. Alternativa descartada por más pesada:
+submodule `capypdf` + `WITH_CAPYPDF=ON`.
+
 ## Historial de runs (port)
 
 - **#1** `35719592283`: puerta LFS `head -c 5` (`!<arc` ≠ `!<arch>`) → 6 bytes exactos.
@@ -127,6 +171,15 @@ mezclar libc++/clang r27 en el port con libs construidas con r30.
   en `Modules/`, (b) `share/themes` sin inicializar
   (`add_subdirectory` incondicional), (c) NDK 27.3 del runner pisando el r30
   vía `ANDROID_NDK_HOME`.
+- **#5** `35741814037`: las 3 fixes de #4 **verificadas** (Boost ✓,
+  5 submodules ✓, NDK r30 ✓, todos los find/link del configure ✓ — gtk4
+  4.22.5, gtkmm 4.14.0, pangomm 2.58.0…) ⇒ llega a *Generate* y muere con 2
+  clases nuevas: (a) `.pc` con `prefix` absoluto del CI de las libs
+  (ICU_UC ×2), (b) genexp `$<BOOL:WITH_CAPYPDF>` literal (target no creado
+  con OFF).
+- **#6** `35742501729`: re-run de **confirmación de log** (despachada SIN los
+  fixes, para capturar el detalle exacto de ambos errores) ⇒ mismos 3 mensajes,
+  detalle leído y fixes aplicados en esta tanda.
 
 ## Historial de runs (libs hermanas)
 

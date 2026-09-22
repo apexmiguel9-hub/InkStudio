@@ -178,8 +178,57 @@ jobs:
             || { echo "ERROR: falta share/themes/CMakeLists.txt"; exit 1; }
           echo "OK: 5 submodules inicializados (2geom/libcroco/libdepixelize/libuemf/themes)"
 
-      - name: pc overlay (shims de las libs de Blender)
-        run: bash .libs/scripts/gen-pc.sh "$PWD/.blender-libs" "$PWD/pc-overlay"
+      # Runs #5/#6: bug upstream en src/CMakeLists.txt:339 — el generator
+      # expression $<$<BOOL:WITH_CAPYPDF>:Inkscape::CapyPDF> trata WITH_CAPYPDF
+      # como STRING LITERAL (las genexps NO expanden variables) y
+      # $<BOOL:<cualquier-string-no-falso>> = 1 => el link al target se exige
+      # SIEMPRE, pero el target sólo se crea dentro de if(WITH_CAPYPDF)
+      # (DefineDependsandFlags.cmake:195) => con -DWITH_CAPYPDF=OFF el generate
+      # muere con "Target ... links to but the target was not found"
+      # (único $<BOOL:VAR> literal de TODO el árbol — barido completo — el resto
+      # de opciones OFF no lo sufren). Parche al clone efímero: ${...} SÍ se
+      # expande al parsear el comando => $<BOOL:OFF> = 0 y no se exige el target.
+      - name: Parche upstream (bug genexp CapyPDF, run #5/#6)
+        run: |
+          set -euo pipefail
+          cd inkscape
+          sed -i 's|BOOL:WITH_CAPYPDF>|BOOL:${WITH_CAPYPDF}>|' src/CMakeLists.txt
+          grep -qF '$<$<BOOL:${WITH_CAPYPDF}>:Inkscape::CapyPDF>' src/CMakeLists.txt \
+            || { echo "ERROR: el parche CapyPDF no aplicó (¿cambió upstream la línea?)"; exit 1; }
+          if grep -q 'BOOL:WITH_CAPYPDF>' src/CMakeLists.txt; then
+            echo "ERROR: queda el literal BOOL:WITH_CAPYPDF> sin parchear"
+            exit 1
+          fi
+          echo 'OK: genexp CapyPDF ahora usa ${WITH_CAPYPDF} (se expande en configure)'
+
+      - name: pc overlay (shims Blender) + normalización .pc de .libs
+        run: |
+          set -euo pipefail
+          bash .libs/scripts/gen-pc.sh "$PWD/.blender-libs" "$PWD/pc-overlay"
+          # Runs #5/#6: el harvest de las libs dejó .pc con rutas ABSOLUTAS del
+          # CI donde se construyeron (raíz: build.sh normalizaba '^prefix=' y no
+          # matchea 'prefix = ' con espacios — icu; además gsl.pc lleva rutas
+          # absolutas incrustadas hasta en Libs/Cflags, sin derivar de ${prefix}).
+          # pkg-config --exists NO valida rutas (el pre-flight de #5 pasó) pero
+          # el generate de CMake SÍ: "Imported target PkgConfig::ICU_UC includes
+          # non-existent path .../.work/staging/icu/include" ×2 => run #5.
+          # Regla: cualquier /home/runner/.../staging/<name> del propio .pc pasa
+          # a resolverse contra pcfiledir (pc viven en <name>/lib/pkgconfig):
+          #   .../staging/<name>/resto -> ${pcfiledir}/../../resto
+          #   .../staging/<name>       -> ${pcfiledir}/../..
+          for pc in $(grep -rl '/home/runner' .libs --include='*.pc' 2>/dev/null || true); do
+            sed -i -E \
+              -e 's|/home/runner[^[:space:]]*/staging/([[:alnum:]_.+-]+)/|\${pcfiledir}/../../|g' \
+              -e 's|/home/runner[^[:space:]]*/staging/([[:alnum:]_.+-]+)|\${pcfiledir}/../..|g' \
+              "$pc"
+            echo "  normalizado: $pc"
+          done
+          # gate: ni una ruta absoluta del runner en NINGÚN .pc de los dos árboles
+          if grep -rl '/home/runner' .libs pc-overlay --include='*.pc' 2>/dev/null; then
+            echo "ERROR: quedan .pc con rutas absolutas del runner (listados arriba)"
+            exit 1
+          fi
+          echo "OK: .pc relocatables (0 rutas absolutas del runner)"
 
       - name: Entorno (PKG_CONFIG_LIBDIR + CMAKE_PREFIX_PATH) + pre-flight pkg-config
         run: |
@@ -223,7 +272,24 @@ jobs:
           pkg-config --exists 'gtkmm-4.0 >= 4.13.3'
           pkg-config --exists 'glibmm-2.68 >= 2.78.1'
           pkg-config --exists 'sigc++-3.0 >= 3.6'
-          echo "OK: los 16 módulos + 6 version pins de Inkscape resuelven"
+          echo "OK: los 17 módulos + 6 version pins de Inkscape resuelven"
+          # Runs #5/#6: --exists NO valida rutas => un .pc con prefix absoluto
+          # roto pasa este pre-flight y sólo estalla en el generate de CMake
+          # ("ICU_UC includes non-existent path"). Ahora verificamos que TODOS
+          # los -I/-L que resuelvan apuntan a dirs reales.
+          for m in harfbuzz pangocairo pangoft2 fontconfig gmodule-2.0 bdw-gc \
+                   lcms2 icu-uc cairomm-1.16 pangomm-2.48 gdk-pixbuf-2.0 \
+                   graphene-1.0 glibmm-2.68 giomm-2.68 sigc++-3.0 epoxy \
+                   gtk4 gtkmm-4.0; do
+            for d in $(pkg-config --cflags "$m" | tr ' ' '\n' | sed -n 's/^-I//p') \
+                     $(pkg-config --libs "$m"   | tr ' ' '\n' | sed -n 's/^-L//p'); do
+              [ -d "$d" ] || {
+                echo "ERROR: $m -> dir '$d' no existe (¿.pc con ruta absoluta rota?)"
+                exit 1
+              }
+            done
+          done
+          echo "OK: dirs -I/-L resueltos existen (19 módulos)"
 
       # Runs #3 y #4: find_package(Boost 1.19.0 REQUIRED) (DefineDepends:371).
       #  - #3: ni módulo (el cmake oficial >= 3.30 ya NO trae Modules/FindBoost;
@@ -294,7 +360,7 @@ jobs:
             -DWITH_LIBSPELLING=OFF -DWITH_GSOURCEVIEW=OFF \
             -DWITH_IMAGE_MAGICK=OFF -DWITH_GRAPHICS_MAGICK=OFF \
             -DWITH_GNU_READLINE=OFF -DWITH_CAPYPDF=OFF -DWITH_NLS=OFF \
-            -DBOOST_ROOT="$PWD/.libs/boost" -DBoost_NO_SYSTEM_PATHS=ON \
+            -DBOOST_ROOT="$PWD/.libs/boost" \
             -DBoost_DIR="$PWD/scripts/cmake" \
             2>&1 | tee configure.log
           # Puerta NDK (run #4: ANDROID_NDK_HOME del runner pisó nuestro r30
