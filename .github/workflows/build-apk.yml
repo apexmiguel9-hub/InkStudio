@@ -191,7 +191,7 @@ jobs:
         run: chmod +x android/gradlew
 
       # ---------------------------------------------------------
-      # 8. BUILD: clean + assembleRelease
+      # 8. BUILD: assembleRelease (sin clean para evitar problemas de formato)
       # ---------------------------------------------------------
       - name: Build APK
         working-directory: android
@@ -199,29 +199,34 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           NDK_HOME: ${{ env.NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
-        run: |
-          ./gradlew clean assembleRelease --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       # ---------------------------------------------------------
-      # 9. Verificar + Subir APK
+      # 9. Verificar + Subir APK (busca en todas las ubicaciones posibles)
       # ---------------------------------------------------------
       - name: Verify APK
         run: |
-          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
-          if [ -z "$APK" ] || [ ! -f "$APK" ]; then echo "ERROR: APK no generado"; exit 1; fi || { echo "ERROR: APK no generado"; exit 1; }
-          echo "APK: $APK ($(stat -c%s "$APK") bytes)"
+          echo "=== Buscando APK generado ==="
+          APK=$(find android/app/build/outputs -name "*.apk" 2>/dev/null | head -1)
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then
+            echo "APK no encontrado, listando outputs:"
+            find android/app/build/outputs -type f 2>/dev/null | head -30
+            echo "ERROR: APK no generado"
+            exit 1
+          fi
+          echo "APK encontrado: $APK ($(stat -c%s "$APK") bytes)"
           unzip -l "$APK" | grep -E '\.so$' | head -20
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: inkstudio-release-arm64-v8a.apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: android/app/build/outputs/**/*.apk
           retention-days: 30
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: inkstudio-release-arm64-v8a.aab
-          path: android/app/build/outputs/bundle/release/*.aab
+          path: android/app/build/outputs/**/*.aab
           retention-days: 30
