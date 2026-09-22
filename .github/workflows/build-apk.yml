@@ -99,7 +99,7 @@ jobs:
           echo "=== Total en jniLibs ==="
           ls -la "$DEST/" | wc -l
           echo "=== Headers copiados a $INCLUDE_DEST ==="
-          ls -la "$INCLUDE_DEST/" | head -20
+          ls -la "$INCLUDE_DEST/" 2>/dev/null | head -20 || true
         env:
           GH_TOKEN: ${{ github.token }}
 
