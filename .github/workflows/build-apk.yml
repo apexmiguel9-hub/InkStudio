@@ -11,6 +11,10 @@ on:
         description: 'release | debug'
         required: false
         default: 'release'
+      source_run_id:
+        description: 'Run ID de build-inkscape exitoso (opcional, auto-detecta el último)'
+        required: false
+        default: ''
 
   # También se puede disparar automáticamente cuando build-inkscape termina OK
   workflow_run:
@@ -29,14 +33,36 @@ jobs:
       - name: Checkout InkStudio (para gradle + android/)
         uses: actions/checkout@v4
 
-      # Descargar .so del build-inkscape exitoso más reciente
+      # Determinar run ID de build-inkscape del que bajar .so
+      - name: Resolve source run ID
+        id: resolve-run
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.source_run_id }}" ]; then
+            echo "source_run_id=${{ inputs.source_run_id }}" >> "$GITHUB_OUTPUT"
+            echo "Usando run ID manual: ${{ inputs.source_run_id }}"
+          else
+            # Auto-detectar: último build-inkscape exitoso en main
+            RUN_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs \
+              --jq '.workflow_runs[] | select(.name=="build-inkscape" and .conclusion=="success" and .head_branch=="main") | .id' \
+              | head -1)
+            if [ -z "$RUN_ID" ]; then
+              echo "ERROR: No se encontró build-inkscape exitoso reciente"
+              exit 1
+            fi
+            echo "source_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "Auto-detectado build-inkscape run: $RUN_ID"
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # Descargar .so del build-inkscape exitoso
       - name: Download native libs artifact
         uses: actions/download-artifact@v4
         with:
           name: inkscape-android-arm64-binaries
           path: android/app/src/main/jniLibs/arm64-v8a/
-          # Si se lanzó manualmente, buscar el run específico; si es workflow_run, usa el que lo disparó
-          # GitHub Actions resuelve automáticamente el artifact del run que disparó
+          run-id: ${{ steps.resolve-run.outputs.source_run_id }}
 
       # Verificar que bajaron los .so
       - name: Verify native libs
