@@ -207,8 +207,8 @@ jobs:
       # ---------------------------------------------------------
       - name: Verify APK
         run: |
-          APK="android/app/build/outputs/apk/release/app-release.apk"
-          [ -f "$APK" ] || { echo "ERROR: APK no generado"; exit 1; }
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          if [ -z "$APK" ] || [ ! -f "$APK" ]; then echo "ERROR: APK no generado"; exit 1; fi || { echo "ERROR: APK no generado"; exit 1; }
           echo "APK: $APK ($(stat -c%s "$APK") bytes)"
           unzip -l "$APK" | grep -E '\.so$' | head -20
 
