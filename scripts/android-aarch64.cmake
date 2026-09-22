@@ -20,6 +20,12 @@ set(CMAKE_SYSTEM_NAME Android)
 set(CMAKE_SYSTEM_PROCESSOR aarch64)
 
 # --- localizar el NDK (sin depender de la ruta exacta de la versión) ---
+# Precedencia: -DCMAKE_ANDROID_NDK (la pasa el workflow => manda en CI) >
+# ANDROID_NDK_HOME > glob $HOME/android-ndk-*. OJO run #4: ubuntu-latest
+# exporta ANDROID_NDK_HOME a su NDK 27.3 preinstalado y esta rama ganó: el
+# port se habría compilado con un NDK distinto al con el que se construyeron
+# las libs (r30). Por eso el workflow pasa -DCMAKE_ANDROID_NDK explícito y
+# exporta ANDROID_NDK_HOME apuntando al nuestro.
 if(NOT CMAKE_ANDROID_NDK)
   if(DEFINED ENV{ANDROID_NDK_HOME} AND IS_DIRECTORY "$ENV{ANDROID_NDK_HOME}/toolchains/llvm")
     set(CMAKE_ANDROID_NDK "$ENV{ANDROID_NDK_HOME}")

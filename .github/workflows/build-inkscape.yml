@@ -45,6 +45,13 @@ jobs:
           fi
           test -x "$CLANG" || { echo "ERROR: clang no ejecutable en $CLANG"; exit 1; }
           "$CLANG" --version | head -1
+          # run #4: ubuntu-latest exporta ANDROID_NDK_HOME a su NDK 27.3
+          # preinstalado (/usr/local/lib/android/sdk/ndk/...) y el toolchain
+          # lo consulta ANTES que el glob $HOME/android-ndk-* => el configure
+          # usó el 27.x del runner aunque nuestro r30 estuviera en disco
+          # (cache hit). Reapuntamos la variable a NUESTRO NDK pinneado.
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_DIR (exportado al resto del job)"
 
       - name: Save NDK cache
         if: steps.cache-ndk.outputs.cache-hit != 'true'
@@ -139,19 +146,37 @@ jobs:
       - name: Submodules de build (copias internas con fallback)
         run: |
           cd inkscape
-          # Sólo los que el CMake usa como copias internas:
+          # Sólo los que el CMake usa como copias internas o add_subdirectory:
           #  - 2geom: find_package(2Geom QUIET) sin sistema → fallback internal
           #  - libcroco: SIEMPRE internal (no hay option)
           #  - libdepixelize / libuemf: mismo fallback que 2geom
+          #  - share/themes: run #4 demostró que share/CMakeLists.txt:68 hace
+          #    add_subdirectory(themes) INCONDICIONAL (mi auditoría previa decía
+          #    "sólo install(DIRECTORY)" y era FALSO => "does not contain a
+          #    CMakeLists.txt"). Su CMakeLists sólo tiene un install(DIRECTORY)
+          #    pero el dir debe existir en configure.
           # NO po: con -DWITH_NLS=OFF => set(ENABLE_NLS OFF) => if(ENABLE_NLS)
-          #       salta add_subdirectory(po) (el submodule translations es
-          #       enorme; lo activaremos cuando haga falta NLS)
-          # NO share/extensions ni share/themes: sólo install(DIRECTORY)
+          #       salta add_subdirectory(po) — la run #4 pasó de largo de po,
+          #       confirmado empíricamente (el translations es enorme)
+          # NO share/extensions: SÓLO install(DIRECTORY ...) (share/CMakeLists:21),
+          #       ni un add_subdirectory => no hace falta hasta el paso install
+          #       (al empaquetar el APK sí lo necesitaremos)
           # NO capypdf: -DWITH_CAPYPDF=OFF => if(WITH_CAPYPDF AND ...) no entra
+          #       (la run #4 procesó src/ entero sin quejarse => confirmado)
           # (adaptagrams y autotrace van VENDORED en el propio git de Inkscape)
           git submodule update --init --depth 1 \
             src/3rdparty/2geom src/3rdparty/libcroco \
-            src/3rdparty/libdepixelize src/3rdparty/libuemf
+            src/3rdparty/libdepixelize src/3rdparty/libuemf share/themes
+          # gates: cada dir que el configure va a leer debe tener contenido
+          for p in src/3rdparty/2geom src/3rdparty/libcroco \
+                   src/3rdparty/libdepixelize src/3rdparty/libuemf \
+                   share/themes; do
+            [ -n "$(ls -A "$p" 2>/dev/null)" ] \
+              || { echo "ERROR: submodule $p vacío o ausente"; exit 1; }
+          done
+          test -f share/themes/CMakeLists.txt \
+            || { echo "ERROR: falta share/themes/CMakeLists.txt"; exit 1; }
+          echo "OK: 5 submodules inicializados (2geom/libcroco/libdepixelize/libuemf/themes)"
 
       - name: pc overlay (shims de las libs de Blender)
         run: bash .libs/scripts/gen-pc.sh "$PWD/.blender-libs" "$PWD/pc-overlay"
@@ -200,29 +225,30 @@ jobs:
           pkg-config --exists 'sigc++-3.0 >= 3.6'
           echo "OK: los 16 módulos + 6 version pins de Inkscape resuelven"
 
-      # run #3 murió en find_package(Boost 1.19.0 REQUIRED) (línea 371).
-      # Causa DOBLE verificada:
-      #  1) inkscape/CMakeLists.txt:4-5 fuerza
-      #       if(POLICY CMP0167) cmake_policy(SET CMP0167 NEW)
-      #     => en CMake >= 3.30 find_package(Boost) va DIRECTO a config mode
-      #        y NO carga ningún FindBoost.cmake (por eso no hubo warning de
-      #        "policy not set": sí está seteada).
-      #  2) el boost de Blender trae headers+.a pero NO su BoostConfig.cmake.
-      # Mismo patrón que gen-pc.sh: generar la capa que el consumidor exige,
-      # sin reconstruir. Se instala donde el propio boost la instalaría
-      # (<prefix>/lib/cmake/boost-<ver>/, con la versión LEÍDA del
-      # version.hpp => sin hardcode) => visible por CMAKE_PREFIX_PATH y
-      # BOOST_ROOT aunque CMake resetee Boost_DIR entre las 3 llamadas; además
-      # -DBoost_DIR como vía rápida, y FindBoost.cmake de respaldo por si se
-      # apunta un ref SIN la política (modo módulo). Testado localmente en
-      # ambos modos con las 3 llamadas exactas de Inkscape (ALL-GREEN).
-      - name: Shims Boost (BoostConfig p/ CMP0167-NEW + FindBoost respaldo)
+      # Runs #3 y #4: find_package(Boost 1.19.0 REQUIRED) (DefineDepends:371).
+      #  - #3: ni módulo (el cmake oficial >= 3.30 ya NO trae Modules/FindBoost;
+      #    sólo lo hace el de Debian) ni config (boost de Blender = headers+.a
+      #    SIN BoostConfig.cmake) => "By not providing FindBoost.cmake...".
+      #  - #4: con NUESTRO FindBoost.cmake en CMakeScripts/Modules el módulo SÍ
+      #    se cargó (stack: Modules/FindBoost.cmake:13 (include) <- 371)
+      #    => CMP0167=NEW SÓLO EXCLUYE el built-in; el módulo del usuario en
+      #    CMAKE_MODULE_PATH gana la búsqueda ANTES que BoostConfig (la lectura
+      #    inicial "NEW => jamás carga FindBoost" era FALSA; doc oficial +
+      #    runs + test local lo confirman). Falló su include: copiamos el
+      #    entry y NO el core => "include could not find boost-find-core" ×3.
+      # Fix: entry y core viajan JUNTOS a Modules/ (réplica local: core al
+      # lado => verde; sin core => el error exacto de la run #4). Mismo patrón
+      # que gen-pc.sh: dar la capa que el consumidor exige, sin reconstruir.
+      # BoostConfig+BoostConfigVersion se instalan igualmente como RED (config
+      # mode) en <boost>/lib/cmake/boost-<ver>/ (versión LEÍDA del version.hpp,
+      # sin hardcode) + -DBoost_DIR, por si un ref futuro no lleva el módulo.
+      - name: Shims Boost (FindBoost+core en Modules gana; BoostConfig de red)
         run: |
           set -euo pipefail
           if grep -q 'CMP0167' inkscape/CMakeLists.txt; then
-            echo "nota: este ref fuerza CMP0167=NEW => manda BoostConfig.cmake"
+            echo "nota: este ref fuerza CMP0167=NEW (excluye el built-in; NUESTRO módulo en MODULE_PATH sigue ganando)"
           else
-            echo "nota: este ref NO toca CMP0167 => módulo: manda el respaldo FindBoost"
+            echo "nota: este ref NO toca CMP0167 => modo módulo con el FindBoost nativo si el cmake lo trae"
           fi
           # versión real del boost harvesteado (108700 => 1.87.0), sin hardcode
           VH=.libs/boost/include/boost/version.hpp
@@ -239,12 +265,17 @@ jobs:
             test -f "$D/$f" || { echo "ERROR: no se copió $D/$f"; exit 1; }
           done
           echo "BoostConfig instalado en $D (boost ${MAJ}.${MIN}.${PAT})"
-          # respaldo del modo módulo (CMakeLists.txt:23 lo mete en MODULE_PATH)
+          # EL QUE MANDA: el módulo en MODULE_PATH (CMakeLists.txt:23).
+          # Entry + core JUNTOS — el include usa CMAKE_CURRENT_LIST_DIR y sin
+          # el core es exactamente el fallo de la run #4 ("include could not
+          # find"). La run #4 probó que el módulo del usuario gana al config.
           grep -q 'CMAKE_MODULE_PATH.*CMakeScripts/Modules' inkscape/CMakeLists.txt \
             || { echo "ERROR: CMAKE_MODULE_PATH ya no apunta a CMakeScripts/Modules"; exit 1; }
-          cp scripts/cmake/FindBoost.cmake inkscape/CMakeScripts/Modules/
+          cp scripts/cmake/FindBoost.cmake scripts/cmake/boost-find-core.cmake \
+             inkscape/CMakeScripts/Modules/
           test -f inkscape/CMakeScripts/Modules/FindBoost.cmake
-          echo "respaldo FindBoost instalado en inkscape/CMakeScripts/Modules"
+          test -f inkscape/CMakeScripts/Modules/boost-find-core.cmake
+          echo "FindBoost.cmake + boost-find-core.cmake instalados en CMakeScripts/Modules"
 
       - name: CMake configure
         id: cfg
@@ -256,6 +287,7 @@ jobs:
           # NLS OFF => sin submodule po/ (ver paso anterior).
           cmake -S inkscape -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/android-aarch64.cmake" \
+            -DCMAKE_ANDROID_NDK="$HOME/android-ndk-${{ inputs.ndk }}" \
             -DCMAKE_BUILD_TYPE=Release \
             -DWITH_POPPLER=OFF -DENABLE_POPPLER_CAIRO=OFF \
             -DWITH_LIBWPG=OFF -DWITH_LIBVISIO=OFF -DWITH_LIBCDR=OFF \
@@ -265,6 +297,15 @@ jobs:
             -DBOOST_ROOT="$PWD/.libs/boost" -DBoost_NO_SYSTEM_PATHS=ON \
             -DBoost_DIR="$PWD/scripts/cmake" \
             2>&1 | tee configure.log
+          # Puerta NDK (run #4: ANDROID_NDK_HOME del runner pisó nuestro r30
+          # con su NDK 27.3 preinstalado). El Configuration Summary del
+          # configure lista CMAKE_C_COMPILER: DEBE venir del NDK pinneado.
+          grep -E "CMAKE_C_COMPILER:.*android-ndk-${{ inputs.ndk }}/" configure.log || {
+            echo "ERROR: el configure NO usó el NDK pinneado ${{ inputs.ndk }}"
+            grep -E 'CMAKE_C_COMPILER' configure.log || true
+            exit 1
+          }
+          echo "OK: NDK ${{ inputs.ndk }} verificado en el configure"
 
       - name: CMake build
         id: bld

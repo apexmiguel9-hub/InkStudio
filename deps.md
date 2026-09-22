@@ -65,29 +65,68 @@ nuestro camino es el toolchain CMake estándar.
   file(s) known to git` en los 4 submodules. `actions/checkout` sólo clona de
   GitHub → el workflow usa `git clone` directo a gitlab (soporta rama/tag
   shallow; sha vía `--filter=blob:none`).
-- Submodules requeridos: `2geom`, `libcroco`, `libdepixelize`, `libuemf`
-  (todos gitlab); `po`/`extensions`/`themes`/`capypdf` NO en el primer pase.
+- Submodules requeridos: `2geom`, `libcroco`, `libdepixelize`, `libuemf`,
+  **`share/themes`** (`share/CMakeLists.txt:68` = `add_subdirectory(themes)`
+  **incondicional** — run #4 lo probó; la auditoría previa decía "sólo
+  install(DIRECTORY)" y era **falso**); `po` gateado por `NLS=OFF` (la run #4
+  pasó de largo de `po` ✓), `extensions` sólo `install(DIRECTORY)` (sin paso
+  install en el workflow — al empaquetar el APK sí hará falta), `capypdf`
+  con `WITH_CAPYPDF=OFF` (la run #4 procesó `src/` entero sin quejarse ✓).
 
-## Boost (lección run #3 del port)
+## Boost (lecciones runs #3 y #4 del port)
 
-`find_package(Boost 1.19.0 REQUIRED)` (DefineDependsandFlags:371) falló con
-*"By not providing FindBoost.cmake... asked ... a package configuration file"*.
-Causa **doble** verificada:
+`find_package(Boost 1.19.0 REQUIRED)` (DefineDependsandFlags:371):
 
-1. `inkscape/CMakeLists.txt:4-5` fuerza `cmake_policy(SET CMP0167 NEW)` → en
-   CMake ≥ 3.30 el `find_package(Boost)` va **directo a config mode** y jamás
-   carga un `FindBoost.cmake` (por eso no hubo warning de "policy not set").
-2. El boost de Blender (1.87.0) trae `include/` + `libboost_stacktrace_basic.a`
-   pero **sin `BoostConfig.cmake`**.
+- **Run #3**: ni módulo ni config ⇒ *"By not providing FindBoost.cmake...
+  asked ... a package configuration file"*. Ojo: el cmake **oficial ≥ 3.30 ya
+  NO instala `Modules/FindBoost.cmake`** (el de Debian sí lo trae — por eso
+  en local "existía"), y el boost de Blender trae `include/` +
+  `libboost_stacktrace_basic.a` pero **sin `BoostConfig.cmake`**.
+- **Run #4**: `CMP0167` (`inkscape/CMakeLists.txt:4-5` = `NEW`) — la doc
+  oficial dice NEW = "search for upstream BoostConfig directamente", pero
+  **sólo excluye el FindBoost built-in**: un `FindBoost.cmake` en
+  `CMAKE_MODULE_PATH` (nuestro) **sigue ganando la búsqueda del modo módulo
+  antes que el config** ⇒ el stack de la run #4 es
+  `Modules/FindBoost.cmake:13 (include)` ← `find_package:371`, y el test
+  local lo replicó. **Mi lectura inicial ("NEW ⇒ jamás carga FindBoost") era
+  FALSA.** Falló el `include`: copiamos el entry a `Modules/` y NO su
+  `boost-find-core.cmake` (incluido vía `CMAKE_CURRENT_LIST_DIR`) ⇒
+  `include could not find` ×3. Réplica local: core al lado del entry →
+  VERDE; sin él → el error exacto de la run #4.
 
-Fix (`scripts/cmake/`, testado localmente en **ambos** modos con las 3
-llamadas exactas de Inkscape → ALL-GREEN): lógica única en
-`boost-find-core.cmake` + `BoostConfig.cmake`/`BoostConfigVersion.cmake`
-(config, primario — el workflow lo instala en `<boost>/lib/cmake/boost-<ver>/`
-con versión **leída del `version.hpp`**, sin hardcode, + `-DBoost_DIR`) +
-`FindBoost.cmake` de respaldo (modo módulo, para refs sin la política).
+Fix (`scripts/cmake/`, testado en **ambos** modos con las 3 llamadas de
+Inkscape → ALL-GREEN): lógica única `boost-find-core.cmake` + `FindBoost.cmake`
+(+ core) copiados a `CMakeScripts/Modules/` — **es lo que manda** — y
+`BoostConfig.cmake`/`BoostConfigVersion.cmake` (+ core) en
+`<boost>/lib/cmake/boost-<ver>/` (versión **leída del `version.hpp`**, sin
+hardcode) + `-DBoost_DIR` como **red** para refs sin el módulo.
 Semántica: el call 373 (`stacktrace_backtrace`, no disponible) deja
 `BOOST_FOUND=FALSE` → Inkscape cae al 378 con `stacktrace_basic` = nuestra `.a`.
+
+## NDK (lección run #4 del port)
+
+El Configuration Summary mostró `CMAKE_C_COMPILER: /usr/local/lib/android/sdk/ndk/27.3...`
+= **el NDK preinstalado del runner**, no nuestro r30 (que sí estaba en disco:
+cache hit). Causa: el toolchain consulta `ENV{ANDROID_NDK_HOME}` **antes** que
+el glob `$HOME/android-ndk-*`, y ubuntu-latest expone esa variable apuntando a su 27.x.
+Fix triple: `Setup NDK` exporta `ANDROID_NDK_HOME=$HOME/android-ndk-<ver>` vía
+`GITHUB_ENV`, el configure pasa `-DCMAKE_ANDROID_NDK` explícito (precedencia
+máxima en el toolchain) y una **puerta** exige `android-ndk-<ver>/` en
+`CMAKE_C_COMPILER` dentro de `configure.log`. Riesgo si no se arreglaba:
+mezclar libc++/clang r27 en el port con libs construidas con r30.
+
+## Historial de runs (port)
+
+- **#1** `35719592283`: puerta LFS `head -c 5` (`!<arc` ≠ `!<arch>`) → 6 bytes exactos.
+- **#2** `35719922554`: `actions/checkout` contra el mirror GitHub STALE
+  (2022, sin `.gitmodules`) → `git clone` a gitlab.
+- **#3** `35734275593`: primer contacto con el configure; muere en
+  `find_package(Boost)` (sin FindBoost built-in ni BoostConfig).
+- **#4** `35737210796`: **llega AL configure** (submodules gitlab, gen-pc,
+  pre-flight 16+6 ✓) y muere con 3 errores: (a) FindBoost entry sin su core
+  en `Modules/`, (b) `share/themes` sin inicializar
+  (`add_subdirectory` incondicional), (c) NDK 27.3 del runner pisando el r30
+  vía `ANDROID_NDK_HOME`.
 
 ## Historial de runs (libs hermanas)
 
