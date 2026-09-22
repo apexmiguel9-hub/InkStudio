@@ -57,7 +57,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       # Descargar .so del build-inkscape exitoso usando gh CLI (más fiable cross-workflow)
-      - name: Download native libs artifact
+      - name: Download native libs artifact (inkscape own libs)
         run: |
           set -euo pipefail
           RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
@@ -84,10 +84,36 @@ jobs:
           
           unzip -o "$RUNNER_TEMP/artifact.zip" -d "$DEST"
           
-          echo "=== Verificación ==="
+          echo "=== libs propias descargadas ==="
           ls -la "$DEST/"
-          for f in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so libcairo.so; do
-            [ -f "$DEST/$f" ] && echo "  ✓ $f" || echo "  ✗ $f FALTA"
+
+      # Clonar libs de dependencias (tier1+tier2 + Blender subset) y copiar TODAS las .so
+      - name: Clone dependency libs & copy all .so
+        run: |
+          set -euo pipefail
+          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          
+          # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
+          echo "=== Clonando lib-inkscape-android_arm64 (tier1+tier2) ==="
+          git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
+          find /tmp/our-libs -name "*.so" -o -name "*.so.*" | while read so; do
+            cp -v "$so" "$DEST/"
+          done
+          
+          # 2. Blender libs (subset LFS que ya usa build-inkscape)
+          echo "=== Clonando blender lib-android_arm64 (subset LFS) ==="
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://projects.blender.org/blender/lib-android_arm64.git /tmp/blender-libs
+          cd /tmp/blender-libs
+          git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
+          find /tmp/blender-libs -name "*.so" -o -name "*.so.*" | while read so; do
+            cp -v "$so" "$DEST/"
+          done
+          
+          echo "=== Total .so en jniLibs ==="
+          ls -la "$DEST/" | wc -l
+          echo "=== Verificación libs críticas ==="
+          for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so libcairo.so libpango-1.0.so libglib-2.0.so libgobject-2.0.so libgio-2.0.so libgmodule-2.0.so libfreetype.so libharfbuzz.so libfribidi.so libpixman-1.so libepoxy.so libgraphene-1.0.so libpng16.so libjpeg.so libxml2.so libz.so liblzma.so libzstd.so libbrotlidec.so libbrotlicommon.so libexpat.so libpcre2-8.so libffi.so libintl.so libiconv.so liblcms2.so; do
+            [ -f "$DEST/$lib" ] && echo "  ✓ $lib" || echo "  ✗ $lib FALTA"
           done
         env:
           GH_TOKEN: ${{ github.token }}
