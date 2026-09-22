@@ -17,8 +17,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Include dirs para headers de Inkscape/GTK
-# Estos vienen del artifact del build anterior
+# Headers copiados a ${CMAKE_SOURCE_DIR}/include/ (android/app/src/main/cpp/include/)
 include_directories(
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/gtk-4.0
+    ${CMAKE_SOURCE_DIR}/include/glib-2.0
+    ${CMAKE_SOURCE_DIR}/include/cairo
+    ${CMAKE_SOURCE_DIR}/include/pango-1.0
+    # Fallback: también buscar en jniLibs por si acaso
     ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include
     ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/gtk-4.0
     ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include/glib-2.0
