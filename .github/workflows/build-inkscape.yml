@@ -451,6 +451,8 @@ jobs:
           echo "=== binarios/libs generados ==="
           find build -type f \( -name 'inkscape' -o -name 'inkscape.exe' \
              -o -name 'libink*.so' \) -exec ls -la {} \; || true
+          # también mostrar lib/ explícitamente
+          ls -la build/lib/libink*.so 2>/dev/null || true
 
       - name: Subir binarios (inkscape + libs nativas)
         if: success()
@@ -458,9 +460,8 @@ jobs:
         with:
           name: inkscape-android-arm64-binaries
           path: |
-            build/src/inkscape
-            build/src/libinkscape*.so
-            build/src/libinkview*.so
+            build/lib/libinkscape*.so
+            build/lib/libinkview*.so
           if-no-files-found: ignore
           retention-days: 7
 
