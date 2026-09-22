@@ -191,23 +191,25 @@ jobs:
             yes | sdkmanager "build-tools;34.0.0" || true
           fi
           
-          # Instalar NDK r30 via sdkmanager (crea source.properties que AGP requiere)
-          # El NDK manual descargado no tiene source.properties => AGP lo rechaza
-          if [ ! -d "$ANDROID_HOME/ndk/26.1.10909125" ] && [ ! -d "$ANDROID_HOME/ndk/25.1.8937393" ]; then
-            echo "Instalando NDK r30 (26.1.10909125) via sdkmanager..."
-            yes | sdkmanager "ndk;26.1.10909125" || true
+          # NDK: descargar r30 oficial de Google (como build-inkscape)
+          # El zip oficial TIENE source.properties (AGP lo requiere)
+          # sdkmanager instala r26, incompatible con nuestros .so (r30)
+          NDK_VER="r30"
+          NDK_DIR="$HOME/android-ndk-$NDK_VER"
+          CLANG="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if ! test -x "$CLANG"; then
+            echo "Descargando android-ndk-$NDK_VER-linux.zip ..."
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/ndk.zip" \
+              "https://dl.google.com/android/repository/android-ndk-$NDK_VER-linux.zip"
+            unzip -q "$RUNNER_TEMP/ndk.zip" -d "$HOME"
+            rm -f "$RUNNER_TEMP/ndk.zip"
           fi
-          
-          # Detectar NDK instalado
-          NDK_PATH=$(ls -d $ANDROID_HOME/ndk/*/ 2>/dev/null | head -1 | xargs -r basename)
-          if [ -n "$NDK_PATH" ]; then
-            echo "NDK encontrado: $NDK_PATH"
-            echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_PATH" >> "$GITHUB_ENV"
-          else
-            echo "WARN: No se encontró NDK instalado, usando fallback"
-            echo "ANDROID_NDK_HOME=$HOME/android-ndk-r30" >> "$GITHUB_ENV"
-          fi
-          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          test -x "$CLANG" || { echo "ERROR: clang no ejecutable en $CLANG"; exit 1; }
+          "$CLANG" --version | head -1
+          # Verificar source.properties (AGP lo exige)
+          test -f "$NDK_DIR/source.properties" || { echo "ERROR: NDK sin source.properties"; exit 1; }
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK r30 listo: $NDK_DIR"
 
       - name: Cache Gradle
         uses: actions/cache@v4
