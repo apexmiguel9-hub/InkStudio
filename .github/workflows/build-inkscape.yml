@@ -1,0 +1,249 @@
+name: build-inkscape
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Ref de inkscape/inkscape (rama, tag o sha)'
+        required: false
+        default: 'master'
+      ndk:
+        description: 'Version del NDK (misma que lib-inkscape-android_arm64; fallback r30-beta1)'
+        required: false
+        default: 'r30'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del port (toolchain + scripts)
+        uses: actions/checkout@v4
+
+      # NDK: zip oficial de Google + cache propio. nttld/setup-ndk con
+      # local-cache está BANNED (granja de symlinks a hostedtoolcache que
+      # cuelga en otros VMs → clang "No such file"). Patrón idéntico al de
+      # lib-inkscape-android_arm64 (misma key ndk-<ver>-v1).
+      - name: Restore NDK cache
+        id: cache-ndk
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/android-ndk-${{ inputs.ndk }}
+          key: ndk-${{ inputs.ndk }}-v1
+
+      - name: Setup NDK
+        id: ndk
+        run: |
+          set -o pipefail
+          NDK_DIR="$HOME/android-ndk-${{ inputs.ndk }}"
+          CLANG="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if ! test -x "$CLANG"; then
+            echo "descargando android-ndk-${{ inputs.ndk }}-linux.zip ..."
+            curl -fsSL --retry 3 -o "$RUNNER_TEMP/ndk.zip" \
+              "https://dl.google.com/android/repository/android-ndk-${{ inputs.ndk }}-linux.zip"
+            unzip -q "$RUNNER_TEMP/ndk.zip" -d "$HOME"
+            rm -f "$RUNNER_TEMP/ndk.zip"
+          fi
+          test -x "$CLANG" || { echo "ERROR: clang no ejecutable en $CLANG"; exit 1; }
+          "$CLANG" --version | head -1
+
+      - name: Save NDK cache
+        if: steps.cache-ndk.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/android-ndk-${{ inputs.ndk }}
+          key: ndk-${{ inputs.ndk }}-v1
+
+      - name: Host tools
+        run: |
+          sudo apt-get update
+          # cmake 3.28 (Inkscape exige >= 3.24), ninja, pkg-config, gettext
+          # (por si se reactiva NLS en el futuro), git-lfs para el pull
+          # dirigido. NO hace falta meson: Inkscape es CMake puro y todas las
+          # deps vienen pre-compiladas de las otras dos repos.
+          # (pod2man no hace falta: Pod2man.cmake degrada elegante.)
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config gettext git-lfs ca-certificates
+          cmake --version | head -1
+          ninja --version
+
+      # ------------------------------------------------------------------
+      # Árbol de dependencias = 2 clones en CI (0 duplicación de GB,
+      # 0 cuota LFS en nuestra cuenta, sin fusionar repos).
+      # ------------------------------------------------------------------
+      - name: Libs oficiales de Blender (LFS subset dirigido)
+        run: |
+          set -o pipefail
+          # SKIP_SMUDGE: sin él clonamos gigas de punteros; después pull
+          # dirigido de los 13 dirs que consume Inkscape (los .pc que Blender
+          # no incluye los genera gen-pc.sh más abajo).
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 \
+            https://projects.blender.org/blender/lib-android_arm64.git .blender-libs
+          cd .blender-libs
+          git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
+          # Puerta LFS: la cabecera debe ser '!<arch>' (archivo real), no un
+          # puntero de texto de git-lfs.
+          for f in zlib/lib/libz.a png/lib/libpng16.a freetype/lib/libfreetype.a \
+                   harfbuzz/lib/libharfbuzz.a xml2/lib/libxml2.a \
+                   potrace/lib/libpotrace.a epoxy/lib/libepoxy.a \
+                   brotli/lib/libbrotlidec-static.a; do
+            [ -f "$f" ] || { echo "ERROR: falta $f (¿pull LFS incompleto?)"; exit 1; }
+            head -c 5 "$f" | grep -q '!<arch' \
+              || { echo "ERROR: $f no es un .a real: $(head -c60 "$f")"; exit 1; }
+          done
+          echo "OK: subset Blender verificado ($(du -sh . | cut -f1))"
+
+      - name: Nuestras libs (tier1 + tier2, GTK4 + gtkmm incluidos)
+        run: |
+          git clone --depth 1 \
+            https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git .libs
+          # Puertas de cosecha de las piezas críticas del tier2
+          test -f .libs/gtk4/lib/libgtk-4.so
+          test -f .libs/gtkmm/lib/libgtkmm-4.0.a
+          for pc in gtk4/lib/pkgconfig/gtk4.pc \
+                    gtk4/lib/pkgconfig/gtk4-unix-print.pc \
+                    gtkmm/lib/pkgconfig/gtkmm-4.0.pc \
+                    glib/lib/pkgconfig/gmodule-2.0.pc \
+                    bdw-gc/lib/pkgconfig/bdw-gc.pc \
+                    lcms2/lib/pkgconfig/lcms2.pc \
+                    icu/lib/pkgconfig/icu-uc.pc; do
+            test -f ".libs/$pc" || { echo "ERROR: falta .libs/$pc"; exit 1; }
+          done
+          echo "OK: harvest crítica ($(find .libs -type d -path '*/lib/pkgconfig' | wc -l) dirs pkgconfig)"
+
+      - name: Inkscape (checkout externo)
+        uses: actions/checkout@v4
+        with:
+          repository: inkscape/inkscape
+          ref: ${{ inputs.ref }}
+          path: inkscape
+          fetch-depth: 1
+          submodules: false
+
+      - name: Submodules de build (copias internas con fallback)
+        run: |
+          cd inkscape
+          # Sólo los que el CMake usa como copias internas:
+          #  - 2geom: find_package(2Geom QUIET) sin sistema → fallback internal
+          #  - libcroco: SIEMPRE internal (no hay option)
+          #  - libdepixelize / libuemf: mismo fallback que 2geom
+          # NO po: con -DWITH_NLS=OFF => set(ENABLE_NLS OFF) => if(ENABLE_NLS)
+          #       salta add_subdirectory(po) (el submodule translations es
+          #       enorme; lo activaremos cuando haga falta NLS)
+          # NO share/extensions ni share/themes: sólo install(DIRECTORY)
+          # NO capypdf: -DWITH_CAPYPDF=OFF => if(WITH_CAPYPDF AND ...) no entra
+          # (adaptagrams y autotrace van VENDORED en el propio git de Inkscape)
+          git submodule update --init --depth 1 \
+            src/3rdparty/2geom src/3rdparty/libcroco \
+            src/3rdparty/libdepixelize src/3rdparty/libuemf
+
+      - name: pc overlay (shims de las libs de Blender)
+        run: bash .libs/scripts/gen-pc.sh "$PWD/.blender-libs" "$PWD/pc-overlay"
+
+      - name: Entorno (PKG_CONFIG_LIBDIR + CMAKE_PREFIX_PATH) + pre-flight pkg-config
+        run: |
+          set -euo pipefail
+          # --- pkg-config: overlay (15 shims) + pcs reales de nuestra repo ---
+          PC="$(realpath pc-overlay)"
+          for d in $(find "$PWD/.libs" -type d -path '*/lib/pkgconfig' | sort); do
+            PC="$PC:$(realpath "$d")"
+          done
+          {
+            echo "PKG_CONFIG_LIBDIR=$PC"
+            echo "PKG_CONFIG_PATH="
+            echo "PKG_CONFIG_SYSROOT_DIR="
+          } >> "$GITHUB_ENV"
+          export PKG_CONFIG_LIBDIR="$PC"
+          # --- prefijos CMake = raíces con lib/ o include/ de ambos árboles ---
+          PFX=""
+          for d in "$PWD"/.libs/* "$PWD"/.blender-libs/*; do
+            if [ -d "$d/lib" ] || [ -d "$d/include" ]; then
+              PFX="${PFX:+$PFX:}$(realpath "$d")"
+            fi
+          done
+          echo "CMAKE_PREFIX_PATH=$PFX" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_LIBDIR=$PC"
+          echo "CMAKE_PREFIX_PATH=$PFX"
+          # --- pre-flight: TODOS los módulos pkg-config REQUIRED que pide ---
+          # DefineDependsandFlags.cmake (INKSCAPE_DEP + MM + icu + sigc++ +
+          # epoxy + gtk/glibmm/gtkmm). Fallar AQUÍ es 10x más legible que
+          # fallar dentro de un pkg_check_modules de cmake.
+          for m in harfbuzz pangocairo pangoft2 fontconfig gmodule-2.0 bdw-gc \
+                   lcms2 icu-uc cairomm-1.16 pangomm-2.48 gdk-pixbuf-2.0 \
+                   graphene-1.0 glibmm-2.68 giomm-2.68 sigc++-3.0 epoxy; do
+            pkg-config --exists "$m" \
+              || { echo "ERROR: pkg-config no ve '$m'"; \
+                   pkg-config --print-errors --exists "$m"; exit 1; }
+          done
+          # pins de versión que Inkscape comprueba explícitamente
+          pkg-config --exists 'harfbuzz >= 2.6.5'
+          pkg-config --exists 'pangocairo >= 1.44'
+          pkg-config --exists 'gtk4 >= 4.14.0'
+          pkg-config --exists 'gtkmm-4.0 >= 4.13.3'
+          pkg-config --exists 'glibmm-2.68 >= 2.78.1'
+          pkg-config --exists 'sigc++-3.0 >= 3.6'
+          echo "OK: los 16 módulos + 6 version pins de Inkscape resuelven"
+
+      - name: CMake configure
+        id: cfg
+        run: |
+          set -o pipefail
+          # Tier3 OFF a mano (se auto-apagarían igual si faltan, pero explícito
+          # = más legible): poppler/wpg/visio/cdr (import de PDF/WMF/VSD/CDR),
+          # libspelling, gtksourceview-5, ImageMagick, readline, capypdf.
+          # NLS OFF => sin submodule po/ (ver paso anterior).
+          cmake -S inkscape -B build -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/android-aarch64.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DWITH_POPPLER=OFF -DENABLE_POPPLER_CAIRO=OFF \
+            -DWITH_LIBWPG=OFF -DWITH_LIBVISIO=OFF -DWITH_LIBCDR=OFF \
+            -DWITH_LIBSPELLING=OFF -DWITH_GSOURCEVIEW=OFF \
+            -DWITH_IMAGE_MAGICK=OFF -DWITH_GRAPHICS_MAGICK=OFF \
+            -DWITH_GNU_READLINE=OFF -DWITH_CAPYPDF=OFF -DWITH_NLS=OFF \
+            -DBOOST_ROOT="$PWD/.libs/boost" -DBoost_NO_SYSTEM_PATHS=ON \
+            2>&1 | tee configure.log
+
+      - name: CMake build
+        id: bld
+        run: |
+          set -o pipefail
+          # -k0: sigue tras el primer error → un solo log con TODAS las
+          # clases de fallo (misma filosofía de diagnóstico que en las libs)
+          cmake --build build -- -k0 2>&1 | tee build.log
+
+      - name: Resumen de artefactos
+        run: |
+          echo "=== binarios/libs generados ==="
+          find build -type f \( -name 'inkscape' -o -name 'inkscape.exe' \
+             -o -name 'libink*.so' \) -exec ls -la {} \; || true
+
+      - name: Diagnóstico (configure falló)
+        if: failure() && steps.cfg.outcome == 'failure'
+        run: |
+          echo "=== CMake Errors ==="
+          grep -rh 'CMake Error' configure.log 2>/dev/null | head -40 || true
+          echo "=== CMakeError.log tail ==="
+          tail -60 build/CMakeFiles/CMakeError.log 2>/dev/null || true
+          echo "=== configure.log tail ==="
+          tail -40 configure.log 2>/dev/null || true
+
+      - name: Diagnóstico (build falló)
+        if: failure() && steps.bld.outcome == 'failure'
+        run: |
+          echo "=== FAILED (ninja) ==="
+          grep -a 'FAILED' build.log | sed 's/.*FAILED/FAILED/' | sort -u | head -20 || true
+          echo "=== errores de compilación/enlace ==="
+          grep -aE 'error:|undefined reference|ld\.lld:' build.log | sort -u | head -60 || true
+          echo "=== build.log tail ==="
+          tail -40 build.log 2>/dev/null || true
+
+      - name: Subir logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkscape-logs
+          path: |
+            configure.log
+            build.log
+            build/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+          retention-days: 7
