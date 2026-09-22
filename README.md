@@ -1,4 +1,4 @@
-# Inkscape-android_arm64
+# InkStudio
 
 Port de **Inkscape** a **Android arm64**, manteniendo **GTK4 + gtkmm4** (el
 objetivo NO es reemplazar el toolkit). Es la continuación directa del port de
@@ -29,7 +29,7 @@ oficiales.
 
 ```bash
 gh workflow run build-inkscape \
-  --repo apexmiguel9-hub/Inkscape-android_arm64 --field ref=master
+  --repo apexmiguel9-hub/InkStudio --field ref=master
 ```
 
 Inputs: `ref` (rama/tag/sha de inkscape) y `ndk` (`r30`; si da problemas
