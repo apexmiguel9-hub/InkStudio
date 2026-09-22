@@ -28,8 +28,8 @@ android {
         }
     }
 
-    // NDK: AGP auto-detecta desde ANDROID_NDK_HOME env var (configurado en workflow)
-    // ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
+    // NDK: usar el r30 descargado (AGP no auto-detecta ANDROID_NDK_HOME para CMake)
+    ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
 
     buildTypes {
         release {
