@@ -98,13 +98,20 @@ jobs:
           WORKSPACE="${{ github.workspace }}"
           DEST="$WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           mkdir -p "$DEST"
+          INCLUDE_DEST="$DEST/../include"
+          mkdir -p "$INCLUDE_DEST"
           
           # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
           echo "=== Clonando lib-inkscape-android_arm64 (tier1+tier2) ==="
           git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
+          # Copiar .so
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
             -exec cp -v {} "$DEST/" \;
+          # Copiar headers (include/)
+          find /tmp/our-libs -type d -name "include" | while read inc; do
+            cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
+          done
           
           # 2. Blender libs (subset LFS que ya usa build-inkscape) - SOLO lib/ directorios
           echo "=== Clonando blender lib-android_arm64 (subset LFS) ==="
@@ -116,6 +123,10 @@ jobs:
             -path "*/lib/*" \
             ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
             -exec cp -v {} "$DEST/" \;
+          # Copiar headers de Blender
+          find /tmp/blender-libs -type d -name "include" | while read inc; do
+            cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
+          done
           
           echo "=== Total .so en jniLibs ==="
           ls -la "$DEST/" | wc -l
