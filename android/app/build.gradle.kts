@@ -50,7 +50,7 @@ android {
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
-            cmakeVersion = "3.22.1"
+            // versión definida en CMakeLists.txt: cmake_minimum_required(VERSION 3.22.1)
         }
     }
 
