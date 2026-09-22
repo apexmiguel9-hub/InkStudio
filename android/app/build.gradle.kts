@@ -28,6 +28,9 @@ android {
         }
     }
 
+    // Usar NDK del environment (preinstalado r30)
+    ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
+
     buildTypes {
         release {
             isMinifyEnabled = false

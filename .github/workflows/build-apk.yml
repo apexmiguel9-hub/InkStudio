@@ -147,12 +147,39 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 34
-          ndk-version: r26d
-          cmdline-tools-version: latest
+      - name: Setup Android SDK (manual, más robusto)
+        run: |
+          set -euo pipefail
+          # Android SDK ya viene preinstalado en ubuntu-latest
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
+          
+          # Verificar qué está disponible
+          echo "=== Android SDK actual ==="
+          ls -la $ANDROID_HOME/
+          echo "=== Platforms ==="
+          ls -la $ANDROID_HOME/platforms/ || true
+          echo "=== Build tools ==="
+          ls -la $ANDROID_HOME/build-tools/ || true
+          echo "=== NDK ==="
+          ls -la $ANDROID_HOME/ndk/ || true
+          
+          # Instalar API 34 si no está
+          if [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
+            echo "Instalando platform android-34..."
+            yes | sdkmanager "platforms;android-34" || true
+          fi
+          
+          # Instalar build-tools 34.0.0 si no está
+          if [ ! -d "$ANDROID_HOME/build-tools/34.0.0" ]; then
+            echo "Instalando build-tools 34.0.0..."
+            yes | sdkmanager "build-tools;34.0.0" || true
+          fi
+          
+          # NDK: usar el que ya tenemos del build-inkscape (r30)
+          # No instalar NDK adicional, usamos el del sistema
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$HOME/android-ndk-r30" >> "$GITHUB_ENV"
 
       - name: Cache Gradle
         uses: actions/cache@v4
