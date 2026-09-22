@@ -201,6 +201,43 @@ jobs:
           fi
           echo 'OK: genexp CapyPDF ahora usa ${WITH_CAPYPDF} (se expande en configure)'
 
+      # Runs #7/#8: cairomm 1.15.4 (el que harvesteamos) no tiene
+      # Cairo::ImageSurface::get_device_scale/set_device_scale — esos
+      # métodos C++ llegaron en cairomm 1.16.0 (Inkscape master los usa
+      # en 4 archivos). En vez de rebuildear cairomm (requeriría
+      # descargar tarball 1.16+), usamos la API C de cairo 1.18.6
+      # (libcairo.a estática que SÍ tenemos) que es equivalente:
+      #   get_device_scale()  → cairo_surface_get_device_scale()
+      #   set_device_scale()  → cairo_surface_set_device_scale()
+      - name: Parche upstream API cairomm (get/set_device_scale → C API, run #8)
+        run: |
+          set -euo pipefail
+          cd inkscape
+          # 1) canvas-item-ctrl.cpp: extraer escala tras 'auto cache_size = ...'
+          sed -i '/auto cache_size = Geom::Point(_cache->get_width(), _cache->get_height());/a\    double _dsx, _dsy; cairo_surface_get_device_scale(_cache->cobj(), \&_dsx, \&_dsy);' \
+            src/display/control/canvas-item-ctrl.cpp
+          sed -i 's/_cache->get_device_scale()/_dsx/g' src/display/control/canvas-item-ctrl.cpp
+          # 2) pattern-editor.cpp: extraer escala antes del if interno
+          sed -i '/if (!item->pix || tile_size != item->pix->get_width() || scale != item->pix->get_device_scale())/i\        double _pix_scale; cairo_surface_get_device_scale(item->pix->cobj(), \&_pix_scale, \&_pix_scale);' \
+            src/ui/widget/pattern-editor.cpp
+          sed -i 's/item->pix->get_device_scale()/_pix_scale/g' src/ui/widget/pattern-editor.cpp
+          # 3) marker-combo-box.cpp: C API directa
+          sed -i 's/surface->set_device_scale(device_scale, device_scale);/cairo_surface_set_device_scale(surface->cobj(), device_scale, device_scale);/' \
+            src/ui/widget/style/marker-combo-box.cpp
+          # 4) character-viewer.cpp: C API directa (un arg → dos args idénticos)
+          sed -i 's/surface->set_device_scale(scale);/cairo_surface_set_device_scale(surface->cobj(), scale, scale);/' \
+            src/ui/widget/character-viewer.cpp
+          # gates: sin llamadas C++ residuales
+          if grep -rn 'get_device_scale\|set_device_scale' \
+               src/display/control/canvas-item-ctrl.cpp \
+               src/ui/widget/pattern-editor.cpp \
+               src/ui/widget/style/marker-combo-box.cpp \
+               src/ui/widget/character-viewer.cpp 2>/dev/null | grep -v 'cairo_surface_'; then
+            echo "ERROR: quedan llamadas C++ get/set_device_scale sin parchear"
+            exit 1
+          fi
+          echo "OK: 4 archivos parcheados a cairo_surface_get/set_device_scale C API"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail
