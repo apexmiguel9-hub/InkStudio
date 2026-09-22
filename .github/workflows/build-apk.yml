@@ -3,20 +3,11 @@ name: build-apk
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: 'Ref del build-inkscape (para descargar artifact correcto)'
-        required: false
-        default: 'master'
       variant:
         description: 'release | debug'
         required: false
         default: 'release'
-      source_run_id:
-        description: 'Run ID de build-inkscape exitoso (opcional, auto-detecta el último)'
-        required: false
-        default: ''
 
-  # También se puede disparar automáticamente cuando build-inkscape termina OK
   workflow_run:
     workflows: ["build-inkscape"]
     types: [completed]
@@ -24,137 +15,108 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: read
 
     steps:
-      - name: Checkout InkStudio (para gradle + android/)
+      # ---------------------------------------------------------
+      # 1. Checkout repo (android/ + .github/)
+      # ---------------------------------------------------------
+      - name: Checkout InkStudio
         uses: actions/checkout@v4
 
-      # Determinar run ID de build-inkscape del que bajar .so
+      # ---------------------------------------------------------
+      # 2. Descargar .so nativas del último build-inkscape exitoso
+      # ---------------------------------------------------------
       - name: Resolve source run ID
         id: resolve-run
         run: |
           set -euo pipefail
           if [ -n "${{ inputs.source_run_id }}" ]; then
             echo "source_run_id=${{ inputs.source_run_id }}" >> "$GITHUB_OUTPUT"
-            echo "Usando run ID manual: ${{ inputs.source_run_id }}"
           else
-            # Auto-detectar: último build-inkscape exitoso en main
             RUN_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs \
               --jq '.workflow_runs[] | select(.name=="build-inkscape" and .conclusion=="success" and .head_branch=="main") | .id' \
               | head -1)
-            if [ -z "$RUN_ID" ]; then
-              echo "ERROR: No se encontró build-inkscape exitoso reciente"
-              exit 1
-            fi
+            [ -z "$RUN_ID" ] && { echo "ERROR: no hay build-inkscape exitoso"; exit 1; }
             echo "source_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "Auto-detectado build-inkscape run: $RUN_ID"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # Descargar .so del build-inkscape exitoso usando gh CLI (más fiable cross-workflow)
-      - name: Download native libs artifact (inkscape own libs)
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download native libs artifact
         run: |
           set -euo pipefail
           RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
-          ARTIFACT_NAME="inkscape-android-arm64-binaries"
           DEST="android/app/src/main/jniLibs/arm64-v8a"
-          
           mkdir -p "$DEST"
-          echo "Descargando artifact '$ARTIFACT_NAME' del run $RUN_ID..."
-          
-          # Obtener artifact ID
           ARTIFACT_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs/$RUN_ID/artifacts \
-            --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id")
-          
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "ERROR: No se encontró artifact '$ARTIFACT_NAME' en run $RUN_ID"
-            exit 1
-          fi
-          
-          echo "Artifact ID: $ARTIFACT_ID"
-          
-          # Descargar y extraer
+            --jq '.artifacts[] | select(.name=="inkscape-android-arm64-binaries") | .id')
+          [ -z "$ARTIFACT_ID" ] && { echo "ERROR: artifact no encontrado"; exit 1; }
           gh api repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip \
-            > "$RUNNER_TEMP/artifact.zip"
-          
-          unzip -o "$RUNNER_TEMP/artifact.zip" -d "$DEST"
-          
-          echo "=== libs propias descargadas ==="
+            > "$RUNNER_TEMP/inkscape-libs.zip"
+          unzip -o "$RUNNER_TEMP/inkscape-libs.zip" -d "$DEST"
+          echo "Libs propias descargadas:"
           ls -la "$DEST/"
-
-      # Clonar libs de dependencias (tier1+tier2 + Blender subset) y copiar TODAS las .so
-      - name: Clone dependency libs & copy all .so
         env:
           GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------
+      # 3. Clonar dependencias + copiar .so Y headers (ruta CORRECTA)
+      # ---------------------------------------------------------
+      - name: Clone dependency libs & copy .so + headers
         run: |
           set -euo pipefail
-          WORKSPACE="${{ github.workspace }}"
-          DEST="$WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
-          mkdir -p "$DEST"
-          # CMake busca en: ${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include
-          # CMAKE_SOURCE_DIR = android/app/src/main/cpp
-          # ../../../ = android/app/
-          # => android/app/jniLibs/arm64-v8a/include
-          INCLUDE_DEST="$WORKSPACE/android/app/jniLibs/arm64-v8a/include"
-          mkdir -p "$INCLUDE_DEST"
-          
-          # 1. Nuestras libs (tier1+tier2: GTK4, gtkmm, cairo, pango, glib, etc.)
-          echo "=== Clonando lib-inkscape-android_arm64 (tier1+tier2) ==="
+          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          INCLUDE_DEST="android/app/src/main/cpp/include"
+          mkdir -p "$DEST" "$INCLUDE_DEST"
+
+          # 1. Nuestras libs (tier1+tier2)
+          echo "=== Clonando lib-inkscape-android_arm64 ==="
           git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
-          # Copiar .so
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
             -exec cp -v {} "$DEST/" \;
-          # Copiar headers (include/) -> ruta que CMake espera
           find /tmp/our-libs -type d -name "include" | while read inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
-          
-          # 2. Blender libs (subset LFS que ya usa build-inkscape) - SOLO lib/ directorios
-          echo "=== Clonando blender lib-android_arm64 (subset LFS) ==="
+
+          # 2. Blender libs (subset LFS)
+          echo "=== Clonando blender lib-android_arm64 ==="
           GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 https://projects.blender.org/blender/lib-android_arm64.git /tmp/blender-libs
           cd /tmp/blender-libs
           git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
-          # Solo librerías en directorios lib/ (excluir python, cmake, share, etc.)
           find /tmp/blender-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
-            -path "*/lib/*" \
-            ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
+            -path "*/lib/*" ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
             -exec cp -v {} "$DEST/" \;
-          # Copiar headers de Blender -> ruta que CMake espera
           find /tmp/blender-libs -type d -name "include" | while read inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
-          
-          echo "=== Total .so en jniLibs ==="
-          ls -la "$DEST/" | wc -l
-          echo "=== Verificación libs críticas ==="
-          for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so libcairo.so libpango-1.0.so libglib-2.0.so libgobject-2.0.so libgio-2.0.so libgmodule-2.0.so libfreetype.so libharfbuzz.so libfribidi.so libpixman-1.so libepoxy.so libgraphene-1.0.so libpng16.so libjpeg.so libxml2.so libz.so liblzma.so libzstd.so libbrotlidec.so libbrotlicommon.so libexpat.so libpcre2-8.so libffi.so libintl.so libiconv.so liblcms2.so; do
-            [ -f "$DEST/$lib" ] && echo "  ✓ $lib" || echo "  ✗ $lib FALTA"
-          done
 
-      # Verificar que bajaron los .so (solo los que SABEMOS que existen)
+          echo "=== Total en jniLibs ==="
+          ls -la "$DEST/" | wc -l
+          echo "=== Headers copiados a $INCLUDE_DEST ==="
+          ls -la "$INCLUDE_DEST/" | head -20
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------
+      # 4. Verificar libs críticas
+      # ---------------------------------------------------------
       - name: Verify native libs
         run: |
           set -euo pipefail
-          ls -la android/app/src/main/jniLibs/arm64-v8a/
-          echo "=== Tamaños ==="
-          for f in android/app/src/main/jniLibs/arm64-v8a/*.so; do
-            [ -f "$f" ] && echo "$(basename "$f"): $(stat -c%s "$f") bytes"
-          done
-          # Solo verificamos libs que DEBEN existir (propias + gtk4)
+          DEST="android/app/src/main/jniLibs/arm64-v8a"
           for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so; do
-            [ -f "android/app/src/main/jniLibs/arm64-v8a/$lib" ] || { echo "ERROR: falta $lib"; exit 1; }
+            [ -f "$DEST/$lib" ] || { echo "ERROR: falta $lib"; exit 1; }
           done
           echo "OK: libs críticas presentes"
-          echo "NOTA: dependencias (cairo, pango, glib, etc.) se linkean estáticamente en libgtk-4.so y libinkscape.so"
 
+      # ---------------------------------------------------------
+      # 5. JDK 17
+      # ---------------------------------------------------------
       - name: Setup JDK 17
         uses: actions/setup-java@v4
         with:
@@ -162,41 +124,25 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Setup Android SDK (manual, más robusto)
+      # ---------------------------------------------------------
+      # 6. NDK r30 OFICIAL + CONFIG GRADLE EXPLÍCITO (RUTA CORRECTA)
+      # ---------------------------------------------------------
+      - name: Setup Android SDK + NDK r30
         run: |
           set -euo pipefail
-          # Android SDK ya viene preinstalado en ubuntu-latest
           export ANDROID_HOME=/usr/local/lib/android/sdk
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
-          
-          # Verificar qué está disponible
-          echo "=== Android SDK actual ==="
-          ls -la $ANDROID_HOME/
-          echo "=== Platforms ==="
-          ls -la $ANDROID_HOME/platforms/ || true
-          echo "=== Build tools ==="
-          ls -la $ANDROID_HOME/build-tools/ || true
-          echo "=== NDK ==="
-          ls -la $ANDROID_HOME/ndk/ || true
-          
-          # Instalar API 34 si no está
-          if [ ! -d "$ANDROID_HOME/platforms/android-34" ]; then
-            echo "Instalando platform android-34..."
-            yes | sdkmanager "platforms;android-34" || true
-          fi
-          
-          # Instalar build-tools 34.0.0 si no está
-          if [ ! -d "$ANDROID_HOME/build-tools/34.0.0" ]; then
-            echo "Instalando build-tools 34.0.0..."
-            yes | sdkmanager "build-tools;34.0.0" || true
-          fi
-          
-          # NDK: descargar r30 oficial de Google (como build-inkscape)
-          # El zip oficial TIENE source.properties (AGP lo requiere)
-          # sdkmanager instala r26, incompatible con nuestros .so (r30)
+
+          # Platforms & build-tools
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+
+          # -----------------------------------------------------
+          # NDK r30 OFICIAL: zip Google (TIENE source.properties)
+          # -----------------------------------------------------
           NDK_VER="r30"
           NDK_DIR="$HOME/android-ndk-$NDK_VER"
           CLANG="$NDK_DIR/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+
           if ! test -x "$CLANG"; then
             echo "Descargando android-ndk-$NDK_VER-linux.zip ..."
             curl -fsSL --retry 3 -o "$RUNNER_TEMP/ndk.zip" \
@@ -204,13 +150,30 @@ jobs:
             unzip -q "$RUNNER_TEMP/ndk.zip" -d "$HOME"
             rm -f "$RUNNER_TEMP/ndk.zip"
           fi
-          test -x "$CLANG" || { echo "ERROR: clang no ejecutable en $CLANG"; exit 1; }
-          "$CLANG" --version | head -1
-          # Verificar source.properties (AGP lo exige)
-          test -f "$NDK_DIR/source.properties" || { echo "ERROR: NDK sin source.properties"; exit 1; }
-          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
-          echo "NDK r30 listo: $NDK_DIR"
 
+          test -x "$CLANG" || { echo "ERROR: clang no ejecutable"; exit 1; }
+          test -f "$NDK_DIR/source.properties" || { echo "ERROR: NDK sin source.properties"; exit 1; }
+
+          echo "NDK r30 verificado: $NDK_DIR"
+          "$CLANG" --version | head -1
+
+          # -----------------------------------------------------
+          # VARIABLES DE ENTORNO PARA GRADLE/CMAKE
+          # -----------------------------------------------------
+          echo "ANDROID_HOME=$ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$NDK_DIR" >> "$GITHUB_ENV"
+
+          # -----------------------------------------------------
+          # ESCRIBIR local.properties EXPLÍCITO (RUTA CORRECTA)
+          # -----------------------------------------------------
+          echo "ndk.dir=$NDK_DIR" > "$GITHUB_WORKSPACE/android/local.properties"
+          echo "sdk.dir=$ANDROID_HOME" >> "$GITHUB_WORKSPACE/android/local.properties"
+          cat "$GITHUB_WORKSPACE/android/local.properties"
+
+      # ---------------------------------------------------------
+      # 7. Cache Gradle
+      # ---------------------------------------------------------
       - name: Cache Gradle
         uses: actions/cache@v4
         with:
@@ -220,43 +183,44 @@ jobs:
           key: gradle-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle.properties') }}
           restore-keys: gradle-
 
+      # ---------------------------------------------------------
+      # 8. Permisos gradlew
+      # ---------------------------------------------------------
       - name: Grant execute permission for gradlew
         run: chmod +x android/gradlew
 
+      # ---------------------------------------------------------
+      # 8. BUILD: clean + assembleRelease
+      # ---------------------------------------------------------
       - name: Build APK
         working-directory: android
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
+          NDK_HOME: ${{ env.NDK_HOME }}
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
         run: |
-          ./gradlew assemble${{ inputs.variant == 'debug' && 'Debug' || 'Release' }} --no-daemon --stacktrace
+          ./gradlew clean assembleRelease --no-daemon --stacktrace
 
+      # ---------------------------------------------------------
+      # 9. Verificar + Subir APK
+      # ---------------------------------------------------------
       - name: Verify APK
         run: |
-          APK="android/app/build/outputs/apk/${{ inputs.variant == 'debug' && 'debug' || 'release' }}/app-${{ inputs.variant == 'debug' && 'debug' || 'release' }}.apk"
+          APK="android/app/build/outputs/apk/release/app-release.apk"
           [ -f "$APK" ] || { echo "ERROR: APK no generado"; exit 1; }
           echo "APK: $APK ($(stat -c%s "$APK") bytes)"
-          # Verificar que incluye libs nativas
           unzip -l "$APK" | grep -E '\.so$' | head -20
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: inkstudio-${{ inputs.variant }}-arm64-v8a.apk
-          path: android/app/build/outputs/apk/**/*.apk
+          name: inkstudio-release-arm64-v8a.apk
+          path: android/app/build/outputs/apk/release/*.apk
           retention-days: 30
 
-      - name: Upload AAB artifact (si release)
-        if: inputs.variant == 'release'
+      - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: inkstudio-release-arm64-v8a.aab
           path: android/app/build/outputs/bundle/release/*.aab
           retention-days: 30
-
-      # Opcional: crear release en GitHub con el APK
-      - name: Create Release (si tag)
-        if: github.event.workflow_dispatch && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            android/app/build/outputs/apk/release/*.apk
-            android/app/build/outputs/bundle/release/*.aab
-          generate_release_notes: true
