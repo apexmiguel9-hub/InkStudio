@@ -58,6 +58,8 @@ jobs:
 
       # Descargar .so del build-inkscape exitoso usando gh CLI (más fiable cross-workflow)
       - name: Download native libs artifact (inkscape own libs)
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
@@ -89,6 +91,8 @@ jobs:
 
       # Clonar libs de dependencias (tier1+tier2 + Blender subset) y copiar TODAS las .so
       - name: Clone dependency libs & copy all .so
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           DEST="android/app/src/main/jniLibs/arm64-v8a"
