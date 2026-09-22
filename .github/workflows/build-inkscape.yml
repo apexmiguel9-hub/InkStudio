@@ -209,23 +209,24 @@ jobs:
       # (libcairo.a estática que SÍ tenemos) que es equivalente:
       #   get_device_scale()  → cairo_surface_get_device_scale()
       #   set_device_scale()  → cairo_surface_set_device_scale()
+      # cobj() devuelve const cairo_surface_t* => const_cast necesario.
       - name: Parche upstream API cairomm (get/set_device_scale → C API, run #8)
         run: |
           set -euo pipefail
           cd inkscape
-          # 1) canvas-item-ctrl.cpp: extraer escala tras 'auto cache_size = ...'
-          sed -i '/auto cache_size = Geom::Point(_cache->get_width(), _cache->get_height());/a\    double _dsx, _dsy; cairo_surface_get_device_scale(_cache->cobj(), \&_dsx, \&_dsy);' \
+          # 1) canvas-item-ctrl.cpp: 3 set_device_scale + 1 get_device_scale
+          sed -i 's|surface->set_device_scale(\([^,]*\), \([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \2)|g' \
             src/display/control/canvas-item-ctrl.cpp
-          sed -i 's/_cache->get_device_scale()/_dsx/g' src/display/control/canvas-item-ctrl.cpp
-          # 2) pattern-editor.cpp: extraer escala antes del if interno
-          sed -i '/if (!item->pix || tile_size != item->pix->get_width() || scale != item->pix->get_device_scale())/i\        double _pix_scale; cairo_surface_get_device_scale(item->pix->cobj(), \&_pix_scale, \&_pix_scale);' \
+          sed -i 's|_cache->get_device_scale()|cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(_cache->cobj()))|g' \
+            src/display/control/canvas-item-ctrl.cpp
+          # 2) pattern-editor.cpp: get_device_scale
+          sed -i 's|item->pix->get_device_scale()|cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(item->pix->cobj()))|g' \
             src/ui/widget/pattern-editor.cpp
-          sed -i 's/item->pix->get_device_scale()/_pix_scale/g' src/ui/widget/pattern-editor.cpp
-          # 3) marker-combo-box.cpp: C API directa
-          sed -i 's/surface->set_device_scale(device_scale, device_scale);/cairo_surface_set_device_scale(surface->cobj(), device_scale, device_scale);/' \
+          # 3) marker-combo-box.cpp: set_device_scale
+          sed -i 's|surface->set_device_scale(\([^,]*\), \([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \2)|g' \
             src/ui/widget/style/marker-combo-box.cpp
-          # 4) character-viewer.cpp: C API directa (un arg → dos args idénticos)
-          sed -i 's/surface->set_device_scale(scale);/cairo_surface_set_device_scale(surface->cobj(), scale, scale);/' \
+          # 4) character-viewer.cpp: set_device_scale (1 arg -> 2 args)
+          sed -i 's|surface->set_device_scale(\([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \1)|g' \
             src/ui/widget/character-viewer.cpp
           # gates: sin llamadas C++ residuales
           if grep -rn 'get_device_scale\|set_device_scale' \
@@ -236,7 +237,7 @@ jobs:
             echo "ERROR: quedan llamadas C++ get/set_device_scale sin parchear"
             exit 1
           fi
-          echo "OK: 4 archivos parcheados a cairo_surface_get/set_device_scale C API"
+          echo "OK: 4 archivos parcheados a cairo_surface_get/set_device_scale C API con const_cast"
 
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
@@ -393,10 +394,21 @@ jobs:
           # = más legible): poppler/wpg/visio/cdr (import de PDF/WMF/VSD/CDR),
           # libspelling, gtksourceview-5, ImageMagick, readline, capypdf.
           # NLS OFF => sin submodule po/ (ver paso anterior).
+          # cairo/cairo.h: el pkg-config de cairomm da -I.../include/cairo pero
+          # el header físico está en .../include/cairo/cairo.h => necesitamos
+          # el padre .../include como -isystem para que #include <cairo/cairo.h> resuelva.
+          CAIRO_INC="$(pkg-config --cflags cairo 2>/dev/null | sed -n 's/^-I//p' | head -1)"
+          if [ -n "$CAIRO_INC" ]; then
+            CAIRO_INC_PARENT="$(dirname "$CAIRO_INC")"
+            EXTRA_CXX_FLAGS="-isystem $CAIRO_INC_PARENT"
+          else
+            EXTRA_CXX_FLAGS="-isystem $PWD/.libs/cairo/include"
+          fi
           cmake -S inkscape -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE="$PWD/scripts/android-aarch64.cmake" \
             -DCMAKE_ANDROID_NDK="$HOME/android-ndk-${{ inputs.ndk }}" \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS="$EXTRA_CXX_FLAGS" \
             -DWITH_POPPLER=OFF -DENABLE_POPPLER_CAIRO=OFF \
             -DWITH_LIBWPG=OFF -DWITH_LIBVISIO=OFF -DWITH_LIBCDR=OFF \
             -DWITH_LIBSPELLING=OFF -DWITH_GSOURCEVIEW=OFF \
