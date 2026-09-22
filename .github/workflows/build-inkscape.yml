@@ -81,13 +81,14 @@ jobs:
           cd .blender-libs
           git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
           # Puerta LFS: la cabecera debe ser '!<arch>' (archivo real), no un
-          # puntero de texto de git-lfs.
+          # puntero de texto de git-lfs. OJO: son 6 bytes exactos — en el
+          # intento 1 usé head -c 5 => '!<arc' que jamás matchea '!<arch>'.
           for f in zlib/lib/libz.a png/lib/libpng16.a freetype/lib/libfreetype.a \
                    harfbuzz/lib/libharfbuzz.a xml2/lib/libxml2.a \
                    potrace/lib/libpotrace.a epoxy/lib/libepoxy.a \
                    brotli/lib/libbrotlidec-static.a; do
             [ -f "$f" ] || { echo "ERROR: falta $f (¿pull LFS incompleto?)"; exit 1; }
-            head -c 5 "$f" | grep -q '!<arch' \
+            [ "$(head -c 6 "$f")" = '!<arch' ] \
               || { echo "ERROR: $f no es un .a real: $(head -c60 "$f")"; exit 1; }
           done
           echo "OK: subset Blender verificado ($(du -sh . | cut -f1))"
