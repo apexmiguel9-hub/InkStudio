@@ -37,9 +37,20 @@ jobs:
           if [ -n "${{ inputs.source_run_id }}" ]; then
             echo "source_run_id=${{ inputs.source_run_id }}" >> "$GITHUB_OUTPUT"
           else
-            RUN_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs \
-              --jq '.workflow_runs[] | select(.name=="build-inkscape" and .conclusion=="success" and .head_branch=="main") | .id' \
-              | head -1)
+            # Paginate through all pages to find the latest successful build-inkscape
+            RUN_ID=""
+            PAGE=1
+            while [ -z "$RUN_ID" ]; do
+              RESPONSE=$(gh api "repos/apexmiguel9-hub/InkStudio/actions/runs?per_page=100&page=$PAGE" --jq '.workflow_runs[] | select(.name=="build-inkscape" and .conclusion=="success" and .head_branch=="main") | .id' 2>/dev/null)
+              if [ -n "$RESPONSE" ]; then
+                RUN_ID=$(echo "$RESPONSE" | head -1)
+                break
+              fi
+              # Check if there are more pages
+              TOTAL=$(gh api "repos/apexmiguel9-hub/InkStudio/actions/runs?per_page=100&page=$PAGE" --jq '.total_count' 2>/dev/null)
+              [ "$TOTAL" -le $((PAGE * 100)) ] && break
+              PAGE=$((PAGE + 1))
+            done
             [ -z "$RUN_ID" ] && { echo "ERROR: no hay build-inkscape exitoso"; exit 1; }
             echo "source_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
           fi
