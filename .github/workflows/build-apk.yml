@@ -56,13 +56,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      # Descargar .so del build-inkscape exitoso
+      # Descargar .so del build-inkscape exitoso usando gh CLI (más fiable cross-workflow)
       - name: Download native libs artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: inkscape-android-arm64-binaries
-          path: android/app/src/main/jniLibs/arm64-v8a/
-          run-id: ${{ steps.resolve-run.outputs.source_run_id }}
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
+          ARTIFACT_NAME="inkscape-android-arm64-binaries"
+          DEST="android/app/src/main/jniLibs/arm64-v8a"
+          
+          mkdir -p "$DEST"
+          echo "Descargando artifact '$ARTIFACT_NAME' del run $RUN_ID..."
+          
+          # Obtener artifact ID
+          ARTIFACT_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs/$RUN_ID/artifacts \
+            --jq ".artifacts[] | select(.name==\"$ARTIFACT_NAME\") | .id")
+          
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "ERROR: No se encontró artifact '$ARTIFACT_NAME' en run $RUN_ID"
+            exit 1
+          fi
+          
+          echo "Artifact ID: $ARTIFACT_ID"
+          
+          # Descargar y extraer
+          gh api repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip \
+            > "$RUNNER_TEMP/artifact.zip"
+          
+          unzip -o "$RUNNER_TEMP/artifact.zip" -d "$DEST"
+          
+          echo "=== Verificación ==="
+          ls -la "$DEST/"
+          for f in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so libcairo.so; do
+            [ -f "$DEST/$f" ] && echo "  ✓ $f" || echo "  ✗ $f FALTA"
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
 
       # Verificar que bajaron los .so
       - name: Verify native libs
