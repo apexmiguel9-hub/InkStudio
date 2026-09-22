@@ -91,7 +91,7 @@ jobs:
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
             -exec cp -v {} "$DEST/" \; 2>/dev/null || true
-          find /tmp/our-libs -type d -name "include" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
+          find /tmp/our-libs -type d -name "include" ! -path "*/llvm/*" ! -path "*/clang/*" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
 
@@ -103,9 +103,15 @@ jobs:
           find /tmp/blender-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             -path "*/lib/*" ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
             -exec cp -v {} "$DEST/" \; 2>/dev/null || true
-          find /tmp/blender-libs -type d -name "include" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
+          find /tmp/blender-libs -type d -name "include" ! -path "*/llvm/*" ! -path "*/clang/*" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
+
+          # Mover headers de clang que queden fuera del árbol (stdint.h etc. del NDK deben ganar)
+          echo "=== Limpiando headers estandar falsos (clang/llvm) ==="
+          rm -f "$INCLUDE_DEST"/stdint.h "$INCLUDE_DEST"/stdarg.h "$INCLUDE_DEST"/stddef.h \
+                "$INCLUDE_DEST"/stdbool.h "$INCLUDE_DEST"/limits.h "$INCLUDE_DEST"/float.h \
+                "$INCLUDE_DEST"/stdatomic.h "$INCLUDE_DEST"/stdalign.h 2>/dev/null || true
 
           echo "=== Total en jniLibs ==="
           ls -la "$DEST/" | wc -l

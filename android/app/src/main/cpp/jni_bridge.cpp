@@ -3,6 +3,7 @@
  * Conecta Kotlin (InkscapeEngine) con C++ (libinkscape + GTK4 backend Android).
  */
 
+#include <stdint.h>
 #include <jni.h>
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
