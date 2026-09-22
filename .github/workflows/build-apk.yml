@@ -135,7 +135,7 @@ jobs:
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH
 
           # Platforms & build-tools
-          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          echo y | sdkmanager "platforms;android-34" "build-tools;34.0.0" >/dev/null
 
           # -----------------------------------------------------
           # NDK r30 OFICIAL: zip Google (TIENE source.properties)
