@@ -50,12 +50,12 @@ android {
     externalNativeBuild {
         cmake {
             path("src/main/cpp/CMakeLists.txt")
-            version("3.22.1")
+            cmakeVersion = "3.22.1"
         }
     }
 
     // Empaquetar .so nativas en el APK
-    packagingOptions {
+    packaging {
         jniLibs {
             useLegacyPackaging = true
         }
