@@ -28,8 +28,8 @@ android {
         }
     }
 
-    // NDK: usar el r30 descargado (AGP no auto-detecta ANDROID_NDK_HOME para CMake)
-    ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
+    // NDK: SOLO via ndk.dir en local.properties (Gradle prohíbe ndkPath + ndk.dir juntos)
+    // ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
 
     buildTypes {
         release {

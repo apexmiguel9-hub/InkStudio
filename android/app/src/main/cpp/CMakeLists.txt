@@ -8,6 +8,9 @@ if(ANDROID)
     set(CMAKE_ANDROID_STL_TYPE c++_static)
 endif()
 
+# VERIFICACIÓN NDK: imprime versión y ruta que CMake está usando
+message(STATUS "=== VERIFICACION NDK: ${CMAKE_ANDROID_NDK} ===")
+
 # C++17 requerido
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
