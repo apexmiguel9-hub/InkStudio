@@ -452,6 +452,18 @@ jobs:
           find build -type f \( -name 'inkscape' -o -name 'inkscape.exe' \
              -o -name 'libink*.so' \) -exec ls -la {} \; || true
 
+      - name: Subir binarios (inkscape + libs nativas)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkscape-android-arm64-binaries
+          path: |
+            build/src/inkscape
+            build/src/libinkscape*.so
+            build/src/libinkview*.so
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Diagnóstico (configure falló)
         if: failure() && steps.cfg.outcome == 'failure'
         run: |
