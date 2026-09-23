@@ -312,9 +312,16 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     
     LOGI("Got InkscapeApplication instance: %p", app_instance);
 
-    // SKIP on_startup entirely - it crashes with dummy instance due to SIOF/uninitialized state
-    // on_activate will be called later from inkscape_canvas_create when surface is ready
-    LOGW("Skipping on_startup() - using dummy instance, on_activate will be called later");
+    // Try on_startup() - it crashes with dummy but anti-abort handlers might catch it
+    // on_startup() is needed to create desktop, canvas, document, etc.
+    if (g_app_on_startup && app_instance) {
+        LOGI("Calling on_startup() on dummy instance (anti-abort handlers active)...");
+        g_app_on_startup(app_instance);
+        LOGI("on_startup() returned OK");
+    } else {
+        LOGW("Skipping on_startup() - function or instance not available");
+    }
+    
     return TRUE;
 }
 
