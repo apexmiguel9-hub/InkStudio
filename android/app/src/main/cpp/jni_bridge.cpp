@@ -102,7 +102,8 @@ Java_org_inkscape_android_InkscapeEngine_nativeInit(
     // Inicializar GTK (sin argc/argv real, pasamos dummy)
     int argc = 1;
     char* argv[] = { const_cast<char*>("inkscape"), nullptr };
-    if (!inkscape_gtk_init(&argc, &argv)) {
+    char** argv_ptr = argv;
+    if (!inkscape_gtk_init(&argc, &argv_ptr)) {
         LOGE("inkscape_gtk_init failed");
         return -2; // INIT_ERROR_GTK_INIT
     }
