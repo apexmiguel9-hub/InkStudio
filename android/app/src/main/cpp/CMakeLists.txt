@@ -120,10 +120,6 @@ set(INKSCAPE_LIBS
 )
 
 add_library(inkscape_jni SHARED jni_bridge.cpp)
-add_library(inkscape_jni SHARED jni_bridge.cpp)
-
-add_library(inkscape_jni SHARED jni_bridge.cpp)
-add_library(inkscape_jni SHARED jni_bridge.cpp)
 
 target_link_libraries(inkscape_jni ${INKSCAPE_LIBS})
 
