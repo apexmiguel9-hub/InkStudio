@@ -81,9 +81,10 @@ using AppInstanceFn    = void* (*)();          // static InkscapeApplication* in
 using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
 using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
 
-static AppInstanceFn   g_app_instance   = nullptr;
-static AppOnStartupFn  g_app_on_startup = nullptr;
-static AppOnActivateFn g_app_on_activate = nullptr;
+static AppConstructorFn g_app_constructor = nullptr;
+static AppInstanceFn    g_app_instance   = nullptr;
+static AppOnStartupFn   g_app_on_startup = nullptr;
+static AppOnActivateFn  g_app_on_activate = nullptr;
 
 static bool inkscape_base_load() {
     if (g_ink_base_loaded) return true;
@@ -96,6 +97,8 @@ static bool inkscape_base_load() {
     }
 
     // Resolver mangled reales
+    g_app_constructor = reinterpret_cast<AppConstructorFn>(
+        dlsym(g_ink_base_handle, "_ZN19InkscapeApplicationC1Ev"));
     g_app_instance   = reinterpret_cast<AppInstanceFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication8instanceEv"));
     g_app_on_startup = reinterpret_cast<AppOnStartupFn>(
@@ -103,6 +106,8 @@ static bool inkscape_base_load() {
     g_app_on_activate = reinterpret_cast<AppOnActivateFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication11on_activateEv"));
 
+    if (g_app_constructor) LOGI("dlopen OK: constructor = %p", (void*)g_app_constructor);
+    else                  LOGW("dlsym constructor -> null (fallback suave)");
     if (g_app_instance)   LOGI("dlopen OK: instance   = %p", (void*)g_app_instance);
     else                  LOGW("dlsym instance -> null (fallback suave)");
     if (g_app_on_startup) LOGI("dlopen OK: on_startup  = %p", (void*)g_app_on_startup);
@@ -269,20 +274,36 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
              "Continuando sin gtk_init() explícito - on_startup() manejará lo necesario.");
     }
 
-    // on_startup es el "arranque GTK" real de Inkscape - obtener instancia singleton y llamar
-    if (g_app_on_startup && g_app_instance) {
-        void* app_instance = g_app_instance();
-        if (app_instance) {
-            LOGI("InkscapeApplication::instance() = %p, calling on_startup()... [display=%p]", app_instance, display);
-            g_app_on_startup(app_instance);
-            LOGI("InkscapeApplication::on_startup() returned OK");
-            return TRUE;
-        } else {
-            LOGE("InkscapeApplication::instance() returned null!");
-            return FALSE;
-        }
+    // 7) Crear/obtener instancia singleton de InkscapeApplication ANTES de on_startup()
+    void* app_instance = nullptr;
+    if (g_app_constructor) {
+        LOGI("Calling InkscapeApplication constructor...");
+        app_instance = g_app_constructor();
+        LOGI("InkscapeApplication constructor returned: %p", app_instance);
+    } else {
+        LOGW("Constructor not available, trying instance()...");
     }
-    LOGE("g_app_on_startup or g_app_instance is null!");
+    
+    if (!app_instance && g_app_instance) {
+        app_instance = g_app_instance();
+        LOGI("InkscapeApplication::instance() returned: %p", app_instance);
+    }
+    
+    if (!app_instance) {
+        LOGE("Failed to get InkscapeApplication instance!");
+        return FALSE;
+    }
+    
+    LOGI("Got InkscapeApplication instance: %p", app_instance);
+
+    // on_startup es el "arranque GTK" real de Inkscape - llamar en la instancia
+    if (g_app_on_startup) {
+        LOGI("Calling InkscapeApplication::on_startup()... [display=%p]", display);
+        g_app_on_startup(app_instance);
+        LOGI("InkscapeApplication::on_startup() returned OK");
+        return TRUE;
+    }
+    LOGE("g_app_on_startup is null!");
     return FALSE;
 }
 
