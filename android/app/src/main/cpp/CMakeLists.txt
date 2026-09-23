@@ -73,35 +73,56 @@ link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a)
 # -lgiomm, -lsigc, -lcairomm… (no hay .so exportado; estaría mal de
 # todos modos porque son símbolos estáticos dentro de libinkscape.so).
 # ======================================================================
+# ======================================================================
+# INKSCAPE_LIBS: MÍNIMO ABSOLUTO (solo lo que el bridge usa DIRECTAMENTE)
+# ----------------------------------------------------------------------
+# El bridge (jni_bridge.cpp) tiene EXACTAMENTE estos grupos de símbolos undefined:
+#   1. inkscape_gtk_init / inkscape_gtk_shutdown                 => libinkscape.so
+#   2. inkscape_canvas_create/resize/render/destroy              => libinkscape.so
+#   3. inkscape_input_touch_* / inkscape_input_scroll/scale      => libinkscape.so
+#   4. ANativeWindow_* / AHardwareBuffer_*                       => -landroid
+#
+# NO usa cairo/pango/glib/gobject/gio/epoxy/graphene DIRECTAMENTE:
+# esos símbolos los toca libinkscape.so INTERNAMENTE (y su dyld de runtime
+# los resuelve contra las .so que se copien a jniLibs — eso lo asegura el
+# workflow build-apk paso 3 con git lfs pull, NO el link estático).
+#
+# IMPORTANTE: el linker de Android resuelve los símbolos UNDEFINED del bridge
+# SOLO contra lo que aquí se lista. Cualquier -l "de más" haría falta que
+# exista un .so en jniLibs con ese SONAME, y como NO lo linkeamos contra él,
+# no debe estar. ¡NO añadir cairo/pango/gtk-4/gdk_pixbuf aquí!
+# ======================================================================
+# ======================================================================
+# INKSCAPE_LIBS: MÍNIMO ABSOLUTO — SOLO lo que jni_bridge.cpp USA REAL
+# ======================================================================
+# El bridge tiene EXACTAMENTE estos símbolos undefined:
+#   inkscape_gtk_init / inkscape_gtk_shutdown / inkscape_canvas_*
+#     / inkscape_input_*   =>  libinkscape.so   (API interna, único proveedor)
+#   ANativeWindow_lock/unlock/release           =>  -landroid (NDK)
+#   __android_log_print                          =>  -llog
+#
+# NADA MÁS. NO -lgtk-4, NO -lcairo, NO -lpango, NO -lglib, NO -lffmpeg...
+# Esas NO las necesita el bridge: son dependencias INTERNAS de libinkscape.so
+# que el runtime carga desde jniLibs (DT_NEEDED) — no del link del .so JNI.
+#
+# Si el linker pidiera cairo/pango/glib sería porque JNI las referencia;
+# el bridge NO las referencia → no -l. ¡NO AÑADIR NADA AQUÍ!
+# ======================================================================
 set(INKSCAPE_LIBS
-    inkscape        # libinkscape.so  (API interna inkscape_gtk_init/canvas/input)
-    inkview         # libinkview.so   (inkscape_canvas_render helpers)
-    inkscape_base   # libinkscape_base.so (utilidades base internas)
-    gtk-4           # libgtk-4.so     (gtk_window/gdk/cairo directos del bridge)
-    gdk_pixbuf-2.0  # libgdk_pixbuf-2.0.so (gdk_pixbuf que usa gtk-4 en runtime)
-    cairo           # libcairo.so     (cairo_surface_t que usa gdk en runtime)
-    cairo-gobject   # libcairo-gobject.so (registro gobject de cairo)
-    pango-1.0       # libpango-1.0.so (pango layout usado por gtk-4 en runtime)
-    pangocairo-1.0  # libpangocairo-1.0.so
-    freetype        # libfreetype.so  (fuentes)
-    fribidi         # libfribidi.so
-    harfbuzz        # libharfbuzz.so
-    glib-2.0        # libglib-2.0.so
-    gio-2.0         # libgio-2.0.so
-    gobject-2.0     # libgobject-2.0.so
-    gmodule-2.0     # libgmodule-2.0.so
-    graphene-1.0    # libgraphene-1.0.so
-    epoxy           # libepoxy.so
-    xml2            # libxml2.so
-    z               # libz.so
-    dl              # dlopen/dlsym
+    inkscape        # libinkscape.so    (inkscape_gtk_init/canvas/input — ÚNICO proveedor API)
+    inkview         # libinkview.so     (helpers canvas que libinkscape usa en runtime)
+    inkscape_base   # libinkscape_base.so (utilidades base internas de libinkscape)
+    android         # ANativeWindow_*  (window nativa del bridge)
     log             # __android_log_print
-    android         # ANativeWindow
-    m               # matematicas
+    dl              # dlopen/dlsym (runtime inkscape)
+    m               # matemáticas
     atomic
 )
 
+add_library(inkscape_jni SHARED jni_bridge.cpp)
+add_library(inkscape_jni SHARED jni_bridge.cpp)
 
+add_library(inkscape_jni SHARED jni_bridge.cpp)
 add_library(inkscape_jni SHARED jni_bridge.cpp)
 
 target_link_libraries(inkscape_jni ${INKSCAPE_LIBS})
