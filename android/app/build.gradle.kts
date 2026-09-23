@@ -34,9 +34,13 @@ android {
 
     signingConfigs {
         create("inkscape-release") {
-            storeFile = file("keystore/inkscape-release.p12")
+            // El workflow build-apk.yml genera/restaura este keystore en CI
+            // (keytool, JDK 17). Persistido como artifact inkstudio-release-keystore
+            // para que la firma sea estable entre builds.
+            val keystorePath = System.getenv("INKSIGN_KEYSTORE") ?: "keystore/inkscape-release.jks"
+            storeFile = file(keystorePath)
             storePassword = System.getenv("INKSIGN_PASS") ?: "inkscape2026"
-            keyAlias = "inkscape"
+            keyAlias = System.getenv("INKSIGN_ALIAS") ?: "inkscape"
             keyPassword = System.getenv("INKSIGN_PASS") ?: "inkscape2026"
         }
     }

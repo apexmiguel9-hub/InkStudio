@@ -149,6 +149,55 @@ jobs:
           cache: 'gradle'
 
       # ---------------------------------------------------------
+      # 5b. KEYSTORE RELEASE: restaurar (firma estable) o generar con keytool
+      # ---------------------------------------------------------
+      - name: Restore or generate release keystore
+        run: |
+          set -euo pipefail
+          KEYDIR="$GITHUB_WORKSPACE/android/app/keystore"
+          KEYSTORE="$KEYDIR/inkscape-release.jks"
+          PASS="inkscape2026"
+          ALIAS="inkscape"
+          mkdir -p "$KEYDIR"
+
+          RESTORED=0
+          # Intentar restaurar la misma firma del ultimo build (para que
+          # actualizaciones sobre APKs previos no fallen por cambio de key)
+          ARTIFACT_ID=$(gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | select(.name=="inkstudio-release-keystore" and .expired==false) | .id' 2>/dev/null | head -1)
+          if [ -n "$ARTIFACT_ID" ]; then
+            echo "KEYSIGN: restaurando keystore del artifact $ARTIFACT_ID"
+            gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/key.zip"
+            unzip -o "$RUNNER_TEMP/key.zip" -d "$KEYDIR" >/dev/null 2>&1 || true
+            if [ -f "$KEYSTORE" ]; then
+              RESTORED=1
+              echo "KEYSIGN: keystore RESTAURADO (firma estable)"
+            fi
+          fi
+
+          if [ "$RESTORED" -eq 0 ]; then
+            echo "KEYSIGN: generando nuevo keystore release con keytool"
+            keytool -genkeypair -v \
+              -keystore "$KEYSTORE" \
+              -alias "$ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$PASS" -keypass "$PASS" \
+              -dname "CN=Inkscape Android, OU=InkStudio, O=InkStudio, L=Mobile, C=US" \
+              2>&1 | tail -2
+          fi
+
+          test -f "$KEYSTORE" || { echo "ERROR: keystore no existe"; exit 1; }
+          echo "KEYSIGN: keystore listo -> $KEYSTORE"
+          ls -la "$KEYSTORE"
+
+          # Variables para gradle (ruta absoluta -> evita bugs de checkout relativo)
+          echo "INKSIGN_KEYSTORE=$KEYSTORE" >> "$GITHUB_ENV"
+          echo "INKSIGN_PASS=$PASS" >> "$GITHUB_ENV"
+          echo "INKSIGN_ALIAS=$ALIAS" >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------
       # 6. NDK r30 OFICIAL + CONFIG GRADLE EXPLÍCITO
       # ---------------------------------------------------------
       - name: Setup Android SDK + NDK r30
@@ -222,6 +271,9 @@ jobs:
           ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_HOME }}
           NDK_HOME: ${{ env.NDK_HOME }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          INKSIGN_KEYSTORE: ${{ env.INKSIGN_KEYSTORE }}
+          INKSIGN_PASS: ${{ env.INKSIGN_PASS }}
+          INKSIGN_ALIAS: ${{ env.INKSIGN_ALIAS }}
         run: ./gradlew assembleRelease --no-daemon --stacktrace
 
       # ---------------------------------------------------------
@@ -252,4 +304,14 @@ jobs:
         with:
           name: inkstudio-release-arm64-v8a.aab
           path: android/app/build/outputs/**/*.aab
+          retention-days: 30
+
+      # ---------------------------------------------------------
+      # 10. Persistir keystore release (firma estable entre builds)
+      # ---------------------------------------------------------
+      - name: Upload release keystore
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkstudio-release-keystore
+          path: android/app/keystore/inkscape-release.jks
           retention-days: 30
