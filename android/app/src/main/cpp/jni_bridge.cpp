@@ -77,14 +77,17 @@ static bool  g_ink_base_loaded = false;
 //   _ZN19InkscapeApplication8instanceEv     = InkscapeApplication::instance() [static singleton getter]
 //   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()   [non-static method]
 //   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()  [non-static method]
+//   _ZN19InkscapeApplicationC1Ev             = InkscapeApplication::InkscapeApplication() [constructor]
 //   _ZN19InkscapeApplication13createDesktopEP10SPDocumentbb
-using AppInstanceFn   = void* (*)();         // static InkscapeApplication* instance()
-using AppOnStartupFn  = void (*)(void*);     // void on_startup()   [non-static, takes 'this']
-using AppOnActivateFn = void (*)(void*);     // void on_activate()  [non-static, takes 'this']
+using AppInstanceFn    = void* (*)();          // static InkscapeApplication* instance()
+using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
+using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
+using AppConstructorFn = void* (*)();          // InkscapeApplication* InkscapeApplication()
 
-static AppInstanceFn   g_app_instance   = nullptr;
-static AppOnStartupFn  g_app_on_startup = nullptr;
-static AppOnActivateFn g_app_on_activate = nullptr;
+static AppInstanceFn    g_app_instance   = nullptr;
+static AppOnStartupFn   g_app_on_startup = nullptr;
+static AppOnActivateFn  g_app_on_activate = nullptr;
+static AppConstructorFn g_app_constructor = nullptr;
 
 // Global dummy instance (used when singleton constructor fails due to SIOF)
 static void* g_dummy_app_instance = nullptr;
@@ -106,13 +109,17 @@ static bool inkscape_base_load() {
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication10on_startupEv"));
     g_app_on_activate = reinterpret_cast<AppOnActivateFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication11on_activateEv"));
+    g_app_constructor = reinterpret_cast<AppConstructorFn>(
+        dlsym(g_ink_base_handle, "_ZN19InkscapeApplicationC1Ev"));
 
-    if (g_app_instance)    LOGI("dlopen OK: instance     = %p", (void*)g_app_instance);
-    else                   LOGW("dlsym instance -> null (fallback suave)");
-    if (g_app_on_startup)  LOGI("dlopen OK: on_startup   = %p", (void*)g_app_on_startup);
-    else                   LOGW("dlsym on_startup -> null (fallback suave)");
-    if (g_app_on_activate) LOGI("dlopen OK: on_activate  = %p", (void*)g_app_on_activate);
-    else                   LOGW("dlsym on_activate -> null (fallback suave)");
+    if (g_app_instance)     LOGI("dlopen OK: instance      = %p", (void*)g_app_instance);
+    else                    LOGW("dlsym instance -> null (fallback suave)");
+    if (g_app_on_startup)   LOGI("dlopen OK: on_startup    = %p", (void*)g_app_on_startup);
+    else                    LOGW("dlsym on_startup -> null (fallback suave)");
+    if (g_app_on_activate)  LOGI("dlopen OK: on_activate   = %p", (void*)g_app_on_activate);
+    else                    LOGW("dlsym on_activate -> null (fallback suave)");
+    if (g_app_constructor)  LOGI("dlopen OK: constructor   = %p", (void*)g_app_constructor);
+    else                    LOGW("dlsym constructor -> null (fallback suave)");
 
     g_ink_base_loaded = true;
     return true;
@@ -126,6 +133,7 @@ static void inkscape_base_unload() {
     g_app_instance = nullptr;
     g_app_on_startup = nullptr;
     g_app_on_activate = nullptr;
+    g_app_constructor = nullptr;
     g_ink_base_loaded = false;
 }
 
@@ -290,32 +298,49 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGE("InkscapeApplication::instance() returned NULL! Singleton not initialized.");
         LOGE("DEBUG: This means constructor didn't run or didn't set static pointer.");
         
-        // Constructor crashes due to SIOF (reorder not fully fixing it).
-        // Allocate dummy zeroed instance instead.
-        LOGW("Skipping constructor (crashes due to SIOF), allocating dummy instance (malloc + zero)...");
-        const size_t dummy_size = 4096;
-        app_instance = malloc(dummy_size);
-        if (app_instance) {
-            memset(app_instance, 0, dummy_size);
-            LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
-            // Store globally for later use in inkscape_canvas_create
-            g_dummy_app_instance = app_instance;
-        } else {
-            LOGE("Failed to allocate dummy instance!");
+        // Try calling constructor - reorder script should have fixed SIOF
+        if (g_app_constructor) {
+            LOGW("instance() returned NULL, trying constructor (reorder should fix SIOF)...");
+            LOGI("Calling InkscapeApplication constructor...");
+            app_instance = g_app_constructor();
+            LOGI("InkscapeApplication constructor returned: %p", app_instance);
+            
+            // If constructor worked, try getting instance again (singleton should be set now)
+            if (app_instance && g_app_instance) {
+                void* new_instance = g_app_instance();
+                if (new_instance) {
+                    LOGI("Constructor worked! instance() now returns: %p", new_instance);
+                    app_instance = new_instance;
+                }
+            }
+        }
+        
+        // Fallback 2: if constructor fails, allocate dummy instance
+        if (!app_instance) {
+            LOGW("Constructor failed or unavailable, allocating dummy instance (malloc + zero)...");
+            const size_t dummy_size = 4096;
+            app_instance = malloc(dummy_size);
+            if (app_instance) {
+                memset(app_instance, 0, dummy_size);
+                LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
+                // Store globally for later use in inkscape_canvas_create
+                g_dummy_app_instance = app_instance;
+            } else {
+                LOGE("Failed to allocate dummy instance!");
+            }
         }
         
         if (!app_instance) {
-            LOGE("Failed to get InkscapeApplication instance!");
+            LOGE("Failed to get InkscapeApplication instance! All fallbacks failed.");
             return FALSE;
         }
     }
     
     LOGI("Got InkscapeApplication instance: %p", app_instance);
 
-    // Call on_startup() on dummy instance to initialize Inkscape internals
-    // (desktop, canvas, preferences, etc.). Anti-abort handlers should catch any crashes.
+    // Call on_startup() to initialize Inkscape internals (desktop, canvas, preferences, etc.)
     if (g_app_on_startup && app_instance) {
-        LOGI("Calling on_startup() on dummy instance...");
+        LOGI("Calling on_startup()...");
         g_app_on_startup(app_instance);
         LOGI("on_startup() returned OK");
     } else {
@@ -335,14 +360,18 @@ gboolean inkscape_canvas_create(ANativeWindow* window, int width, int height, fl
     // entender que el render va a ANativeWindow. La activacion real se hace
     // via on_activate -> crea desktop/canvas internamente.
     if (g_app_on_activate) {
-        // Use dummy instance (created in inkscape_gtk_init) since singleton constructor crashes (SIOF)
+        // Use singleton instance if available, otherwise dummy
         void* app_instance = g_dummy_app_instance;
+        if (g_app_instance) {
+            void* singleton = g_app_instance();
+            if (singleton) app_instance = singleton;
+        }
         if (app_instance) {
-            LOGI("InkscapeApplication dummy instance = %p, calling on_activate()...", app_instance);
+            LOGI("InkscapeApplication instance = %p, calling on_activate()...", app_instance);
             g_app_on_activate(app_instance);
             return TRUE;
         } else {
-            LOGE("No InkscapeApplication instance available (dummy not created)!");
+            LOGE("No InkscapeApplication instance available!");
             return FALSE;
         }
     }
