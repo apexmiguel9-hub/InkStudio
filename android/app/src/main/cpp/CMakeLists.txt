@@ -20,27 +20,36 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Headers copiados a ${CMAKE_SOURCE_DIR}/include/ (android/app/src/main/cpp/include/)
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# Añadir automáticamente los subdirectorios de include/
-# PERO excluyendo dirs que contienen headers con nombre de sistema en su raíz
-# (p.ej. textstyle/stdbool.h, manifold/math.h -> shadowean los del NDK/libc++)
-file(GLOB _INKSCAPE_INCLUDE_SUBDIRS LIST_DIRECTORIES true ${CMAKE_SOURCE_DIR}/include/*)
-set(_SHADOW_HEADERS stdint.h stdbool.h stdarg.h math.h stdlib.h stdio.h string.h
-    limits.h float.h stddef.h stdatomic.h stdalign.h inttypes.h wchar.h ctype.h
-    errno.h assert.h stdio.h locale.h setjmp.h signal.h time.h)
-foreach(_dir IN LISTS _INKSCAPE_INCLUDE_SUBDIRS)
-    if(IS_DIRECTORY "${_dir}")
-        set(_skip FALSE)
-        foreach(_hdr IN LISTS _SHADOW_HEADERS)
-            if(EXISTS "${_dir}/${_hdr}")
-                set(_skip TRUE)
-                message(STATUS "=== SKIP include dir (shadow header ${_hdr}): ${_dir} ===")
-                break()
-            endif()
-        endforeach()
-        if(NOT _skip)
-            include_directories("${_dir}")
-            message(STATUS "=== Include dir: ${_dir} ===")
-        endif()
+# WHITELIST: solo los dirs de GTK/gtkmm que el bridge necesita.
+# NO usar GLOB: blender trae basura (libavcodec/jni.h, python3.13, OSL, ...)
+# que shadowea los headers del NDK (jni.h, stdint.h, math.h, ...)
+set(_INKSCAPE_INCLUDE_DIRS
+    gtk-4.0
+    gdk-pixbuf-2.0
+    gio-unix-2.0
+    glib-2.0
+    graphene-1.0
+    gtkmm-4.0
+    glibmm-2.68
+    giomm-2.68
+    pangomm-2.48
+    cairomm-1.16
+    sigc++-3.0
+    cairo
+    pango-1.0
+    harfbuzz
+    freetype2
+    fribidi
+    fontconfig
+    epoxy
+    libxml2
+)
+foreach(_dir IN LISTS _INKSCAPE_INCLUDE_DIRS)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/include/${_dir}")
+        include_directories("${CMAKE_SOURCE_DIR}/include/${_dir}")
+        message(STATUS "=== Include dir: ${_dir} ===")
+    else()
+        message(WARNING "=== FALTA include dir (ignorado): ${_dir} ===")
     endif()
 endforeach()
 
