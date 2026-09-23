@@ -258,25 +258,8 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
 
     // 6) Si display es NULL, intentar inicializar GDK explícitamente antes de on_startup
     if (!display) {
-        LOGW("GDK display is NULL! Intentando gtk_init() explícito...");
-        // Buscar gtk_init en libinkscape_base
-        typedef void (*GtkInitFn)(int*, char***);
-        GtkInitFn gtk_init_fn = reinterpret_cast<GtkInitFn>(
-            dlsym(g_ink_base_handle, "gtk_init"));
-        if (gtk_init_fn) {
-            int dummy_argc = 1;
-            char* dummy_argv_arr[] = { const_cast<char*>("inkscape"), nullptr };
-            char** dummy_argv = dummy_argv_arr;
-            gtk_init_fn(&dummy_argc, &dummy_argv);
-            LOGI("gtk_init() called");
-            // Re-check display
-            if (gdk_display_get_default) {
-                display = gdk_display_get_default();
-                LOGI("Post-gtk_init gdk_display_get_default() = %p", display);
-            }
-        } else {
-            LOGE("gtk_init symbol not found!");
-        }
+        LOGW("GDK display is NULL (esperado sin RuntimeApplication/ToplevelActivity glue). "
+             "Continuando sin gtk_init() explícito - on_startup() manejará lo necesario.");
     }
 
     // on_startup es el "arranque GTK" real de Inkscape
