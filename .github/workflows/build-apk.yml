@@ -92,6 +92,19 @@ jobs:
             ! -path "*/python/*" ! -path "*/site-packages/*" \
             -size +1k \
             -exec cp -v {} "$DEST/" \; 2>/dev/null || true
+
+          # ICU: libicudata.so / .so.75 son symlinks -> .so.75.1 (30MB).
+          # find -type f NO copia symlinks y Android exige el nombre EXACTO
+          # del DT_NEEDED ("libicudata.so.75"). Materializar dereferenciado:
+          if [ -f /tmp/our-libs/icu/lib/libicudata.so.75.1 ]; then
+            cp -L /tmp/our-libs/icu/lib/libicudata.so.75.1 "$DEST/libicudata.so.75.1" 2>/dev/null || true
+            cp -L /tmp/our-libs/icu/lib/libicudata.so.75   "$DEST/libicudata.so.75"   2>/dev/null || true
+            cp -L /tmp/our-libs/icu/lib/libicudata.so      "$DEST/libicudata.so"      2>/dev/null || true
+            echo "ICU: libicudata.so* copiado (dereferenciado):"
+            ls -la "$DEST"/libicudata.so* 2>/dev/null || true
+          else
+            echo "WARN: icu/lib/libicudata.so.75.1 no presente en our-libs"
+          fi
           find /tmp/our-libs -type d -name "include" ! -path "*/llvm/*" ! -path "*/clang/*" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
           done
@@ -133,10 +146,15 @@ jobs:
         run: |
           set -euo pipefail
           DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
-          for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so; do
-            [ -f "$DEST/$lib" ] || { echo "ERROR: falta $lib"; exit 1; }
+          # DT_NEEDED completo de libinkscape_base.so que NO es system lib:
+          for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so \
+                     lib2geom.so libicudata.so.75; do
+            [ -f "$DEST/$lib" ] || { echo "ERROR: falta $lib (DT_NEEDED no resuelto -> crash en runtime)"; exit 1; }
+            size=$(stat -c%s "$DEST/$lib")
+            [ "$size" -gt 1024 ] || { echo "ERROR: $lib es stub ($size bytes), no una lib real"; exit 1; }
           done
-          echo "OK: libs críticas presentes"
+          echo "OK: libs críticas presentes (incluye lib2geom + libicudata)"
+          ls -la "$DEST"
 
       # ---------------------------------------------------------
       # 5. JDK 17

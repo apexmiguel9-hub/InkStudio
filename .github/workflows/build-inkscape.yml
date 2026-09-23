@@ -497,6 +497,7 @@ jobs:
           path: |
             build/lib/libinkscape*.so
             build/lib/libinkview*.so
+            build/lib/lib2geom.so
           if-no-files-found: ignore
           retention-days: 7
 
