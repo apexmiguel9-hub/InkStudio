@@ -269,9 +269,7 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
              "Continuando sin gtk_init() explícito - on_startup() manejará lo necesario.");
     }
 
-    }
-
-// on_startup es el "arranque GTK" real de Inkscape - obtener instancia singleton y llamar
+    // on_startup es el "arranque GTK" real de Inkscape - obtener instancia singleton y llamar
     if (g_app_on_startup && g_app_instance) {
         void* app_instance = g_app_instance();
         if (app_instance) {
@@ -391,7 +389,10 @@ static std::mutex g_mutex;
 
 extern "C" {
     inline void inkscape_gtk_init_android() {
-        if (g_app_on_startup) g_app_on_startup();
+        if (g_app_on_startup && g_app_instance) {
+            void* app_instance = g_app_instance();
+            if (app_instance) g_app_on_startup(app_instance);
+        }
     }
 }
 
