@@ -148,9 +148,22 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     (void)argc; (void)argv;
     if (!inkscape_base_load()) return FALSE;
     
-    // Instalar handler GLib no-abort ANTES de on_startup()
+    // 1) Desactivar TODOS los niveles fatales de GLib (evita abort() en CRITICAL/ERROR)
+    g_log_set_always_fatal((GLogLevelFlags)0);
+    
+    // 2) Instalar handler por defecto (dominio NULL) que loguea a logcat SIN abortar
     g_log_set_default_handler(inkscape_android_log_handler, NULL);
-    LOGI("GLib log handler installed (non-abort)");
+    
+    // 3) También instalar handler para dominios conocidos de Inkscape/GLib/GTK
+    static const char* known_domains[] = {
+        NULL, "GLib", "Gtk", "Gdk", "Gio", "GModule", "GObject", 
+        "Inkscape", "InkscapeApplication", "Preferences", "AutoSave"
+    };
+    for (const char* dom : known_domains) {
+        g_log_set_handler(dom, (GLogLevelFlags)(G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION),
+                          inkscape_android_log_handler, NULL);
+    }
+    LOGI("GLib log handlers installed (non-abort, always_fatal=0)");
 
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
