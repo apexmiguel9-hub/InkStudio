@@ -54,10 +54,10 @@ foreach(_dir IN LISTS _INKSCAPE_INCLUDE_DIRS)
 endforeach()
 
 # Fallback: también buscar en jniLibs por si acaso
-include_directories(${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a/include)
+include_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/include)
 
 # Link libraries (prebuilt .so/.a en jniLibs)
-link_directories(${CMAKE_SOURCE_DIR}/../../../jniLibs/arm64-v8a)
+link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a)
 
 # Librerías a linkear (orden de dependencias)
 set(INKSCAPE_LIBS
