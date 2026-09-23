@@ -33,6 +33,30 @@
 // dlopen en nativeInit, y a partir de ahi dlsym de los mangled C++ reales.
 // Si un mangled no existe en la lib - se registra un warning (fallback suave).
 // ======================================================================
+// ============================================================
+// Tipos GLib minimos (el NDK NO trae glib.h; la lib REAL los
+// define en runtime; aqui se tipan para que el bridge COMPILE).
+// ============================================================
+#ifndef INKSCAPE_GLIB_TYPES_H
+#define INKSCAPE_GLIB_TYPES_H
+typedef int    gboolean;
+typedef char   gchar;
+typedef int    gint;
+typedef unsigned int  guint;
+typedef long   glong;
+typedef unsigned long gulong;
+typedef double gdouble;
+typedef void*  gpointer;
+typedef const void* gconstpointer;
+#define TRUE 1
+#define FALSE 0
+#define G_BEGIN_DECLS
+#define G_END_DECLS
+#ifndef G_INLINE_FUNC
+#define G_INLINE_FUNC inline
+#endif
+#endif /* INKSCAPE_GLIB_TYPES_H */
+
 static void* g_ink_base_handle = nullptr;
 static bool  g_ink_base_loaded = false;
 
