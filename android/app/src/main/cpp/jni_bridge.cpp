@@ -203,8 +203,30 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGI("HOME set for Inkscape prefs");
     }
 
-    // 1) Inicializar GC de Inkscape ANTES de on_startup()
-    //    Evita "Attempt to use GC allocator before call to Inkscape::GC::init()"
+    // 2) Configurar variables XDG/GTK obligatorias para que GTK no falle al buscar temas/prefs
+    if (!getenv("XDG_DATA_DIRS")) {
+        setenv("XDG_DATA_DIRS", "/data/data/org.inkscape.android/files/share:/usr/share", 1);
+    }
+    if (!getenv("XDG_CONFIG_HOME")) {
+        setenv("XDG_CONFIG_HOME", "/data/data/org.inkscape.android/files/config", 1);
+    }
+    if (!getenv("XDG_CACHE_HOME")) {
+        setenv("XDG_CACHE_HOME", "/data/data/org.inkscape.android/files/cache", 1);
+    }
+    if (!getenv("GTK_DATA_PREFIX")) {
+        setenv("GTK_DATA_PREFIX", "/data/data/org.inkscape.android/files", 1);
+    }
+    LOGI("XDG/GTK env vars set");
+
+    // 3) Verificar/crear directorios mínimos que GTK/Inkscape esperan
+    mkdir("/data/data/org.inkscape.android/files/share", 0700);
+    mkdir("/data/data/org.inkscape.android/files/config", 0700);
+    mkdir("/data/data/org.inkscape.android/files/cache", 0700);
+    mkdir("/data/data/org.inkscape.android/files/share/inkscape", 0700);
+    mkdir("/data/data/org.inkscape.android/files/share/icons", 0700);
+    LOGI("XDG dirs created");
+
+    // 4) Inicializar GC de Inkscape ANTES de on_startup()
     typedef void (*GC_Core_Init_Fn)();
     GC_Core_Init_Fn gc_core_init = reinterpret_cast<GC_Core_Init_Fn>(
         dlsym(g_ink_base_handle, "_ZN8Inkscape2GC4Core4initEv"));
@@ -216,9 +238,47 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGW("Inkscape::GC::Core::init symbol not found (continuing anyway)");
     }
 
+    // 5) VERIFICACIÓN CRÍTICA: GDK Display debe estar disponible antes de on_startup()
+    // Cargamos símbolo gdk_display_get_default desde libgdk-4.so (vía libinkscape_base)
+    typedef void* (*GdkDisplayGetDefaultFn)();
+    GdkDisplayGetDefaultFn gdk_display_get_default = reinterpret_cast<GdkDisplayGetDefaultFn>(
+        dlsym(g_ink_base_handle, "gdk_display_get_default"));
+    
+    void* display = nullptr;
+    if (gdk_display_get_default) {
+        display = gdk_display_get_default();
+    }
+    LOGI("gdk_display_get_default() = %p", display);
+    
+    // Log de variables críticas para debug
+    LOGI("ENV check: HOME=%s, XDG_DATA_DIRS=%s, XDG_CONFIG_HOME=%s", 
+         getenv("HOME") ?: "NULL", getenv("XDG_DATA_DIRS") ?: "NULL", getenv("XDG_CONFIG_HOME") ?: "NULL");
+
+    // 6) Si display es NULL, intentar inicializar GDK explícitamente antes de on_startup
+    if (!display) {
+        LOGW("GDK display is NULL! Intentando gtk_init() explícito...");
+        // Buscar gtk_init en libinkscape_base
+        typedef void (*GtkInitFn)(int*, char***);
+        GtkInitFn gtk_init_fn = reinterpret_cast<GtkInitFn>(
+            dlsym(g_ink_base_handle, "gtk_init"));
+        if (gtk_init_fn) {
+            int dummy_argc = 1;
+            char* dummy_argv[] = { const_cast<char*>("inkscape"), nullptr };
+            gtk_init_fn(&dummy_argc, &dummy_argv);
+            LOGI("gtk_init() called");
+            // Re-check display
+            if (gdk_display_get_default) {
+                display = gdk_display_get_default();
+                LOGI("Post-gtk_init gdk_display_get_default() = %p", display);
+            }
+        } else {
+            LOGE("gtk_init symbol not found!");
+        }
+    }
+
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
-        LOGI("Calling InkscapeApplication::on_startup()...");
+        LOGI("Calling InkscapeApplication::on_startup()... [display=%p]", display);
         g_app_on_startup();
         LOGI("InkscapeApplication::on_startup() returned OK");
         return TRUE;
