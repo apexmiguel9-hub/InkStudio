@@ -20,6 +20,7 @@
 #include <android/log.h>
 #include <dlfcn.h>
 #include <glib.h>
+#include <signal.h>
 #include <algorithm>
 #include <vector>
 #include <cstdio>
@@ -135,6 +136,51 @@ static void inkscape_android_log_handler(const gchar* log_domain,
 }
 
 // ======================================================================
+// SIGABRT handler: último recurso si GLib escapa a nuestros handlers
+// ======================================================================
+static void inkscape_sigabrt_handler(int sig) {
+    (void)sig;
+    __android_log_print(ANDROID_LOG_FATAL, "InkscapeJNI", 
+                        "SIGABRT caught - GLib abort escaped handlers! Continuing...");
+    // NO llamar a abort() ni _exit() - intentamos seguir vivos
+    // Nota: esto es peligroso pero en Android SIGABRT = crash seguro si no lo atrapamos
+}
+
+// ======================================================================
+// Instala todos los handlers anti-abort (GLib + señal) - llamar TEMPRANO
+// ======================================================================
+static void install_anti_abort_handlers() {
+    // 1) Desactivar TODOS los niveles fatales de GLib
+    g_log_set_always_fatal((GLogLevelFlags)0);
+    
+    // 2) Handler por defecto (dominio NULL)
+    g_log_set_default_handler(inkscape_android_log_handler, NULL);
+    
+    // 3) Handlers para dominios conocidos de GLib/GTK/Inkscape
+    static const char* all_domains[] = {
+        NULL, "GLib", "Gtk", "Gdk", "Gio", "GModule", "GObject", 
+        "Inkscape", "InkscapeApplication", "Preferences", "AutoSave",
+        "GC", "Cairo", "Pango", "Fontconfig", "SP", "SPRepr"
+    };
+    for (const char* dom : all_domains) {
+        g_log_set_handler(dom, (GLogLevelFlags)(G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION),
+                          inkscape_android_log_handler, NULL);
+    }
+    
+    // 4) Re-forzar always_fatal=0 por si Inkscape lo cambió después
+    g_log_set_always_fatal((GLogLevelFlags)0);
+    
+    // 5) SIGABRT signal handler como red de seguridad FINAL
+    struct sigaction sa = {};
+    sa.sa_handler = inkscape_sigabrt_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART | SA_ONSTACK;
+    sigaction(SIGABRT, &sa, NULL);
+    
+    LOGI("Anti-abort handlers installed (GLib + SIGABRT)");
+}
+
+// ======================================================================
 // API C plana "inkscape_*" - DEFINIDA aqui (contrato del bridge)
 // ----------------------------------------------------------------------
 // Estas son las funciones que jni_bridge usa internamente. Antes eran
@@ -148,35 +194,14 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     (void)argc; (void)argv;
     if (!inkscape_base_load()) return FALSE;
     
-    // 1) Desactivar TODOS los niveles fatales de GLib (evita abort() en CRITICAL/ERROR)
+    // Handlers ya instalados en JNI_OnLoad; solo re-forzar always_fatal=0
     g_log_set_always_fatal((GLogLevelFlags)0);
     
-    // 2) Instalar handler por defecto (dominio NULL) que loguea a logcat SIN abortar
-    g_log_set_default_handler(inkscape_android_log_handler, NULL);
-    
-    // 3) Instalar handler para TODOS los niveles en TODOS los dominios conocidos
-    //    Incluye dominios NULL + GLib/GTK + dominios de Inkscape
-    static const char* all_domains[] = {
-        NULL, "GLib", "Gtk", "Gdk", "Gio", "GModule", "GObject", 
-        "Inkscape", "InkscapeApplication", "Preferences", "AutoSave",
-        "GC", "Cairo", "Pango", "Fontconfig"
-    };
-    for (const char* dom : all_domains) {
-        g_log_set_handler(dom, (GLogLevelFlags)(G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION),
-                          inkscape_android_log_handler, NULL);
+    // HOME para prefs (si no seteado antes)
+    if (!getenv("HOME")) {
+        setenv("HOME", "/data/data/org.inkscape.android/files", 1);
+        LOGI("HOME set for Inkscape prefs");
     }
-    
-    // 4) Re-forzar always_fatal=0 por si Inkscape lo cambió
-    g_log_set_always_fatal((GLogLevelFlags)0);
-    
-    LOGI("GLib log handlers installed (non-abort, always_fatal=0)");
-
-    // 5) Preparar entorno para Preferences (evita "Permission denied" en profile dir)
-    //    Inkscape busca prefs en $HOME/.config/inkscape - en Android usamos getFilesDir()
-    //    Pero no tenemos Context aquí; el Java side ya debería haber configurado.
-    //    Como fallback, seteamos HOME a /data/data/org.inkscape.android/files
-    setenv("HOME", "/data/data/org.inkscape.android/files", 1);
-    LOGI("HOME set for Inkscape prefs");
 
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
@@ -291,6 +316,12 @@ extern "C" {
 extern "C" JNIEXPORT jint JNICALL
 JNI_OnLoad(JavaVM* vm, void* reserved) {
     LOGI("JNI_OnLoad");
+    
+    // Instalar handlers anti-abort LO MÁS TEMPRANO POSIBLE
+    // (antes de cualquier código de Inkscape que pueda loguear fatal)
+    inkscape_base_load();  // carga libinkscape_base.so para acceder a glib
+    install_anti_abort_handlers();
+    
     return JNI_VERSION_1_6;
 }
 
