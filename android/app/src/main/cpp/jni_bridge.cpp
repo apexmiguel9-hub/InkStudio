@@ -285,9 +285,8 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     if (!app_instance) {
         LOGE("InkscapeApplication::instance() returned NULL! Singleton not initialized.");
         LOGE("DEBUG: This means constructor didn't run or didn't set static pointer.");
-        LOGE("DEBUG: Checking if constructor symbol exists: g_app_constructor = %p", (void*)g_app_constructor);
         
-        // SKIP constructor entirely - it crashes due to SIOF not fixed on CI lib
+        // SKIP constructor entirely - it crashes due to SIOF (reorder not working on CI lib)
         // Go straight to malloc fallback: allocate dummy zeroed instance
         LOGW("Skipping constructor (crashes due to SIOF), allocating dummy instance (malloc + zero)...");
         const size_t dummy_size = 4096;
