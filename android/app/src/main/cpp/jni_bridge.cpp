@@ -203,6 +203,19 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGI("HOME set for Inkscape prefs");
     }
 
+    // 1) Inicializar GC de Inkscape ANTES de on_startup()
+    //    Evita "Attempt to use GC allocator before call to Inkscape::GC::init()"
+    typedef void (*GC_Core_Init_Fn)();
+    GC_Core_Init_Fn gc_core_init = reinterpret_cast<GC_Core_Init_Fn>(
+        dlsym(g_ink_base_handle, "_ZN8Inkscape2GC4Core4initEv"));
+    if (gc_core_init) {
+        LOGI("Calling Inkscape::GC::Core::init()...");
+        gc_core_init();
+        LOGI("Inkscape::GC::Core::init() returned OK");
+    } else {
+        LOGW("Inkscape::GC::Core::init symbol not found (continuing anyway)");
+    }
+
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
         LOGI("Calling InkscapeApplication::on_startup()...");
