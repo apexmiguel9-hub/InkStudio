@@ -32,10 +32,20 @@ android {
     // NDK: SOLO via ndk.dir en local.properties (Gradle prohíbe ndkPath + ndk.dir juntos)
     // ndkPath = System.getenv("ANDROID_NDK_HOME") ?: "/usr/local/lib/android/sdk/ndk/26.1.10909125"
 
+    signingConfigs {
+        create("inkscape-release") {
+            storeFile = file("keystore/inkscape-release.p12")
+            storePassword = System.getenv("INKSIGN_PASS") ?: "inkscape2026"
+            keyAlias = "inkscape"
+            keyPassword = System.getenv("INKSIGN_PASS") ?: "inkscape2026"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             isShrinkResources = false
+            signingConfig = signingConfigs.getByName("inkscape-release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

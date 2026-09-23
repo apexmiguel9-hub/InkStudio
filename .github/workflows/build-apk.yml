@@ -90,6 +90,7 @@ jobs:
           git clone --depth 1 https://github.com/apexmiguel9-hub/lib-inkscape-android_arm64.git /tmp/our-libs
           find /tmp/our-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             ! -path "*/python/*" ! -path "*/site-packages/*" \
+            -size +1k \
             -exec cp -v {} "$DEST/" \; 2>/dev/null || true
           find /tmp/our-libs -type d -name "include" ! -path "*/llvm/*" ! -path "*/clang/*" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
@@ -102,6 +103,7 @@ jobs:
           git lfs pull -I "zlib/**,png/**,jpeg/**,webp/**,openjpeg/**,freetype/**,harfbuzz/**,fribidi/**,xml2/**,epoxy/**,potrace/**,zstd/**,brotli/**"
           find /tmp/blender-libs -type f \( -name "*.so" -o -name "*.so.*" \) \
             -path "*/lib/*" ! -path "*/python/*" ! -path "*/site-packages/*" ! -path "*/cmake/*" \
+            -size +1k \
             -exec cp -v {} "$DEST/" \; 2>/dev/null || true
           find /tmp/blender-libs -type d -name "include" ! -path "*/llvm/*" ! -path "*/clang/*" -print0 2>/dev/null | while IFS= read -r -d '' inc; do
             cp -rv "$inc/"* "$INCLUDE_DEST/" 2>/dev/null || true
@@ -112,6 +114,10 @@ jobs:
           rm -f "$INCLUDE_DEST"/stdint.h "$INCLUDE_DEST"/stdarg.h "$INCLUDE_DEST"/stddef.h \
                 "$INCLUDE_DEST"/stdbool.h "$INCLUDE_DEST"/limits.h "$INCLUDE_DEST"/float.h \
                 "$INCLUDE_DEST"/stdatomic.h "$INCLUDE_DEST"/stdalign.h 2>/dev/null || true
+
+          echo "=== Limpiando .so stub (archivos < 1KB no son libs reales, ej. LFS pointers 130B) ==="
+          find "$DEST" -type f -name "*.so*" -size -1k -delete -print 2>/dev/null | wc -l
+          echo "stubs eliminados (ver arriba)"
 
           echo "=== Total en jniLibs ==="
           ls -la "$DEST/" | wc -l
