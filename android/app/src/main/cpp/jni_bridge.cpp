@@ -292,7 +292,29 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGE("InkscapeApplication::instance() returned NULL! Singleton not initialized.");
         LOGE("DEBUG: This means constructor didn't run or didn't set static pointer.");
         LOGE("DEBUG: Checking if constructor symbol exists: g_app_constructor = %p", (void*)g_app_constructor);
-        return FALSE;
+        
+        // Fallback: intentar llamar al constructor manualmente
+        if (g_app_constructor) {
+            LOGW("instance() returned NULL, trying constructor as fallback...");
+            LOGI("Calling InkscapeApplication constructor...");
+            app_instance = g_app_constructor();
+            LOGI("InkscapeApplication constructor returned: %p", app_instance);
+            
+            // Si el constructor funcionó, intentar obtener la instancia de nuevo
+            if (app_instance && g_app_instance) {
+                void* new_instance = g_app_instance();
+                if (new_instance) {
+                    LOGI("Constructor worked! instance() now returns: %p", new_instance);
+                    app_instance = new_instance;
+                }
+            }
+        }
+        
+        if (!app_instance) {
+            LOGE("Failed to get InkscapeApplication instance! Both instance() and constructor failed.");
+            LOGE("DEBUG: g_app_instance=%p, g_app_constructor=%p", (void*)g_app_instance, (void*)g_app_constructor);
+            return FALSE;
+        }
     }
     
     LOGI("Got InkscapeApplication instance: %p", app_instance);
