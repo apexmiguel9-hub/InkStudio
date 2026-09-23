@@ -19,6 +19,7 @@
 #include <android/native_window_jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <glib.h>
 #include <algorithm>
 #include <vector>
 #include <cstdio>
@@ -114,6 +115,26 @@ static void inkscape_base_unload() {
 }
 
 // ======================================================================
+// GLib log handler que NO aborta (Android: logcat en vez de SIGABRT)
+// ======================================================================
+static void inkscape_android_log_handler(const gchar* log_domain,
+                                          GLogLevelFlags log_level,
+                                          const gchar* message,
+                                          gpointer user_data) {
+    (void)user_data;
+    int android_level = ANDROID_LOG_DEBUG;
+    if (log_level & G_LOG_LEVEL_ERROR) android_level = ANDROID_LOG_ERROR;
+    else if (log_level & G_LOG_LEVEL_CRITICAL) android_level = ANDROID_LOG_FATAL;
+    else if (log_level & G_LOG_LEVEL_WARNING) android_level = ANDROID_LOG_WARN;
+    else if (log_level & G_LOG_LEVEL_INFO) android_level = ANDROID_LOG_INFO;
+    else if (log_level & G_LOG_LEVEL_DEBUG) android_level = ANDROID_LOG_DEBUG;
+    
+    __android_log_print(android_level, "Inkscape-GLib", "[%s] %s", 
+                        log_domain ? log_domain : "GLib", message ? message : "(null)");
+    // IMPORTANTE: NO llamar abort() ni g_error() aquí
+}
+
+// ======================================================================
 // API C plana "inkscape_*" - DEFINIDA aqui (contrato del bridge)
 // ----------------------------------------------------------------------
 // Estas son las funciones que jni_bridge usa internamente. Antes eran
@@ -126,11 +147,19 @@ extern "C" {
 gboolean inkscape_gtk_init(int* argc, char*** argv) {
     (void)argc; (void)argv;
     if (!inkscape_base_load()) return FALSE;
+    
+    // Instalar handler GLib no-abort ANTES de on_startup()
+    g_log_set_default_handler(inkscape_android_log_handler, NULL);
+    LOGI("GLib log handler installed (non-abort)");
+
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
+        LOGI("Calling InkscapeApplication::on_startup()...");
         g_app_on_startup();
+        LOGI("InkscapeApplication::on_startup() returned OK");
         return TRUE;
     }
+    LOGE("g_app_on_startup is null!");
     return FALSE;
 }
 
