@@ -73,17 +73,14 @@ static void* g_ink_base_handle = nullptr;
 static bool  g_ink_base_loaded = false;
 
 // Mangled C++ reales que la lib EXPORTA (verificados con nm -D):
-//   _ZN19InkscapeApplicationC1Ev           = InkscapeApplication::InkscapeApplication() [constructor]
 //   _ZN19InkscapeApplication8instanceEv     = InkscapeApplication::instance() [static singleton getter]
 //   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()   [non-static method]
 //   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()  [non-static method]
 //   _ZN19InkscapeApplication13createDesktopEP10SPDocumentbb
-using AppConstructorFn = void* (*)();         // constructor: InkscapeApplication* InkscapeApplication()
 using AppInstanceFn    = void* (*)();          // static InkscapeApplication* instance()
 using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
 using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
 
-static AppConstructorFn g_app_constructor = nullptr;
 static AppInstanceFn    g_app_instance   = nullptr;
 static AppOnStartupFn   g_app_on_startup = nullptr;
 static AppOnActivateFn  g_app_on_activate = nullptr;
@@ -99,8 +96,6 @@ static bool inkscape_base_load() {
     }
 
     // Resolver mangled reales
-    g_app_constructor = reinterpret_cast<AppConstructorFn>(
-        dlsym(g_ink_base_handle, "_ZN19InkscapeApplicationC1Ev"));
     g_app_instance   = reinterpret_cast<AppInstanceFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication8instanceEv"));
     g_app_on_startup = reinterpret_cast<AppOnStartupFn>(
@@ -108,8 +103,6 @@ static bool inkscape_base_load() {
     g_app_on_activate = reinterpret_cast<AppOnActivateFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication11on_activateEv"));
 
-    if (g_app_constructor) LOGI("dlopen OK: constructor = %p", (void*)g_app_constructor);
-    else                  LOGW("dlsym constructor -> null (fallback suave)");
     if (g_app_instance)   LOGI("dlopen OK: instance   = %p", (void*)g_app_instance);
     else                  LOGW("dlsym instance -> null (fallback suave)");
     if (g_app_on_startup) LOGI("dlopen OK: on_startup  = %p", (void*)g_app_on_startup);
@@ -276,19 +269,14 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
              "Continuando sin gtk_init() explícito - on_startup() manejará lo necesario.");
     }
 
-    // 7) Crear/obtener instancia singleton de InkscapeApplication ANTES de on_startup()
+    // 7) Obtener instancia singleton de InkscapeApplication (ya construida por .init_array)
     void* app_instance = nullptr;
-    if (g_app_constructor) {
-        LOGI("Calling InkscapeApplication constructor...");
-        app_instance = g_app_constructor();
-        LOGI("InkscapeApplication constructor returned: %p", app_instance);
-    } else {
-        LOGW("Constructor not available, trying instance()...");
-    }
-    
-    if (!app_instance && g_app_instance) {
+    if (g_app_instance) {
         app_instance = g_app_instance();
         LOGI("InkscapeApplication::instance() returned: %p", app_instance);
+    } else {
+        LOGE("instance() not available!");
+        return FALSE;
     }
     
     if (!app_instance) {
