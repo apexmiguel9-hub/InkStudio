@@ -39,6 +39,7 @@ class InkStudioApplication : Application() {
             "uemf",                // libuemf.so
             "xslt",                // libxslt.so
             "boost_stacktrace_basic", // libboost_stacktrace_basic.so
+            "inkscape_jni",        // libinkscape_jni.so (JNI bridge construido por CMake)
         )
 
         var loaded = 0
