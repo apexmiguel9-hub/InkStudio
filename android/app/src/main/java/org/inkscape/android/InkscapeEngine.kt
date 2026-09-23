@@ -43,10 +43,13 @@ class InkscapeEngine(private val context: Context) {
     }
 
     // ========== MÉTODOS NATIVOS (JNI) ==========
-    external fun nativeInit(display: Long, width: Int, height: Int, density: Float): Int
+    external fun nativeInit(window: Long, width: Int, height: Int, density: Float): Int
     external fun nativeResize(width: Int, height: Int, density: Float): Int
     external fun nativeRender(): Int
     external fun nativeShutdown(): Int
+
+    // Obtiene el ANativeWindow desde una Surface
+    external fun nativeGetNativeWindow(surface: Surface): Long
 
     // Input events
     external fun nativeTouchDown(pointerId: Int, x: Float, y: Float, pressure: Float): Boolean
@@ -77,7 +80,14 @@ class InkscapeEngine(private val context: Context) {
         }
 
         val surface = Surface(surfaceTexture)
-        val display = 0L // TODO: obtener ANativeWindow_fromSurface via JNI si hace falta
+
+        // Obtener ANativeWindow desde la Surface via JNI
+        val window = nativeGetNativeWindow(surface)
+        if (window == 0L) {
+            Log.e(TAG, "No se pudo obtener ANativeWindow desde Surface")
+            return false
+        }
+        Log.d(TAG, "ANativeWindow obtenido: 0x${window.toString(16)}")
 
         _surfaceWidth = textureView.width
         _surfaceHeight = textureView.height
@@ -88,7 +98,7 @@ class InkscapeEngine(private val context: Context) {
             return false
         }
 
-        val result = nativeInit(display, _surfaceWidth, _surfaceHeight, _surfaceDensity)
+        val result = nativeInit(window, _surfaceWidth, _surfaceHeight, _surfaceDensity)
         _isInitialized = result == INIT_OK
 
         if (_isInitialized) {

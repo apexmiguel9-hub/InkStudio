@@ -449,7 +449,7 @@ JNI_OnUnload(JavaVM* vm, void* reserved) {
 extern "C" JNIEXPORT jint JNICALL
 Java_org_inkscape_android_InkscapeEngine_nativeInit(
     JNIEnv* env, jobject thiz,
-    jint display, jint width, jint height, jfloat density) {
+    jlong window, jint width, jint height, jfloat density) {
 
     std::lock_guard<std::mutex> lock(g_mutex);
 
@@ -464,6 +464,15 @@ Java_org_inkscape_android_InkscapeEngine_nativeInit(
 
     LOGI("Initializing Inkscape: %dx%d @ %.2fx", width, height, density);
 
+    // Set the native window from the passed window pointer
+    g_native_window = reinterpret_cast<ANativeWindow*>(window);
+    if (!g_native_window) {
+        LOGE("No native window provided");
+        return -3; // INIT_ERROR_SURFACE
+    }
+
+    LOGI("Using provided native window: %p", g_native_window);
+
     // Inicializar GTK (sin argc/argv real, pasamos dummy)
     int argc = 1;
     char* argv[] = { const_cast<char*>("inkscape"), nullptr };
@@ -471,11 +480,6 @@ Java_org_inkscape_android_InkscapeEngine_nativeInit(
     if (!inkscape_gtk_init(&argc, &argv_ptr)) {
         LOGE("inkscape_gtk_init failed");
         return -2; // INIT_ERROR_GTK_INIT
-    }
-
-    if (!g_native_window) {
-        LOGE("No native window available");
-        return -3; // INIT_ERROR_SURFACE
     }
 
     if (!inkscape_canvas_create(g_native_window, width, height, density)) {
@@ -503,6 +507,19 @@ Java_org_inkscape_android_InkscapeEngine_nativeSetSurface(
     } else {
         LOGE("Failed to get native window from surface");
     }
+}
+
+extern "C" JNIEXPORT jlong JNICALL
+Java_org_inkscape_android_InkscapeEngine_nativeGetNativeWindow(
+    JNIEnv* env, jobject thiz, jobject surface) {
+
+    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+    if (window) {
+        LOGI("Got native window from surface: %p", window);
+    } else {
+        LOGE("Failed to get native window from surface");
+    }
+    return reinterpret_cast<jlong>(window);
 }
 
 extern "C" JNIEXPORT jint JNICALL
