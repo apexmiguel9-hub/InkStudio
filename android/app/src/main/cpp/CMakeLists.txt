@@ -109,12 +109,11 @@ link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a)
 # el bridge NO las referencia → no -l. ¡NO AÑADIR NADA AQUÍ!
 # ======================================================================
 set(INKSCAPE_LIBS
-    inkscape        # libinkscape.so    (inkscape_gtk_init/canvas/input — ÚNICO proveedor API)
-    inkview         # libinkview.so     (helpers canvas que libinkscape usa en runtime)
-    inkscape_base   # libinkscape_base.so (utilidades base internas de libinkscape)
-    android         # ANativeWindow_*  (window nativa del bridge)
+    inkscape_base   # libinkscape_base.so  (63MB REAL — TODA la API C++ Inkscape)
+    gtk-4           # libgtk-4.so          (GTK4 dinámico que el bridge toca)
+    android         # ANativeWindow_*      (window nativa)
     log             # __android_log_print
-    dl              # dlopen/dlsym (runtime inkscape)
+    dl              # dlopen/dlsym
     m               # matemáticas
     atomic
 )
