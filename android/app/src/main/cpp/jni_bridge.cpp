@@ -86,6 +86,9 @@ static AppInstanceFn   g_app_instance   = nullptr;
 static AppOnStartupFn  g_app_on_startup = nullptr;
 static AppOnActivateFn g_app_on_activate = nullptr;
 
+// Global dummy instance (used when singleton constructor fails due to SIOF)
+static void* g_dummy_app_instance = nullptr;
+
 static bool inkscape_base_load() {
     if (g_ink_base_loaded) return true;
 
@@ -295,6 +298,8 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         if (app_instance) {
             memset(app_instance, 0, dummy_size);
             LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
+            // Store globally for later use in inkscape_canvas_create
+            g_dummy_app_instance = app_instance;
         } else {
             LOGE("Failed to allocate dummy instance!");
         }
@@ -322,18 +327,19 @@ gboolean inkscape_canvas_create(ANativeWindow* window, int width, int height, fl
     // El canvas Android real vive en Kotlin (SurfaceView); aqui damos a
     // entender que el render va a ANativeWindow. La activacion real se hace
     // via on_activate -> crea desktop/canvas internamente.
-    if (g_app_on_activate && g_app_instance) {
-        void* app_instance = g_app_instance();
+    if (g_app_on_activate) {
+        // Use dummy instance (created in inkscape_gtk_init) since singleton constructor crashes (SIOF)
+        void* app_instance = g_dummy_app_instance;
         if (app_instance) {
-            LOGI("InkscapeApplication::instance() = %p, calling on_activate()...", app_instance);
+            LOGI("InkscapeApplication dummy instance = %p, calling on_activate()...", app_instance);
             g_app_on_activate(app_instance);
             return TRUE;
         } else {
-            LOGE("InkscapeApplication::instance() returned null!");
+            LOGE("No InkscapeApplication instance available (dummy not created)!");
             return FALSE;
         }
     }
-    LOGE("g_app_on_activate or g_app_instance is null!");
+    LOGE("g_app_on_activate is null!");
     return FALSE;
 }
 
