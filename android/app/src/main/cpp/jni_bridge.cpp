@@ -306,15 +306,10 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     
     LOGI("Got InkscapeApplication instance: %p", app_instance);
 
-    // on_startup es el "arranque GTK" real de Inkscape - llamar en la instancia
-    if (g_app_on_startup) {
-        LOGI("Calling InkscapeApplication::on_startup()... [display=%p, instance=%p]", display, app_instance);
-        g_app_on_startup(app_instance);
-        LOGI("InkscapeApplication::on_startup() returned OK");
-        return TRUE;
-    }
-    LOGE("g_app_on_startup is null!");
-    return FALSE;
+    // SKIP on_startup entirely - it crashes with dummy instance due to SIOF/uninitialized state
+    // on_activate will be called later from inkscape_canvas_create when surface is ready
+    LOGW("Skipping on_startup() - using dummy instance, on_activate will be called later");
+    return TRUE;
 }
 
 void inkscape_gtk_shutdown() {
