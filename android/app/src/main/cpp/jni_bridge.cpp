@@ -73,13 +73,16 @@ static void* g_ink_base_handle = nullptr;
 static bool  g_ink_base_loaded = false;
 
 // Mangled C++ reales que la lib EXPORTA (verificados con nm -D):
-//   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()
-//   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()
+//   _ZN19InkscapeApplication8instanceEv     = InkscapeApplication::instance() [static singleton getter]
+//   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()   [non-static method]
+//   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()  [non-static method]
 //   _ZN19InkscapeApplication13createDesktopEP10SPDocumentbb
-using AppOnStartupFn  = void (*)();
-using AppOnActivateFn = void (*)();
+using AppInstanceFn    = void* (*)();          // static InkscapeApplication* instance()
+using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
+using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
 
-static AppOnStartupFn  g_app_on_startup  = nullptr;
+static AppInstanceFn   g_app_instance   = nullptr;
+static AppOnStartupFn  g_app_on_startup = nullptr;
 static AppOnActivateFn g_app_on_activate = nullptr;
 
 static bool inkscape_base_load() {
@@ -92,16 +95,20 @@ static bool inkscape_base_load() {
         return false;
     }
 
-    // Resolver mangled reales (opcional - si faltan, no rompe el link)
+    // Resolver mangled reales
+    g_app_instance   = reinterpret_cast<AppInstanceFn>(
+        dlsym(g_ink_base_handle, "_ZN19InkscapeApplication8instanceEv"));
     g_app_on_startup = reinterpret_cast<AppOnStartupFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication10on_startupEv"));
     g_app_on_activate = reinterpret_cast<AppOnActivateFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication11on_activateEv"));
 
-    if (g_app_on_startup)  LOGI("dlopen OK: on_startup  = %p", (void*)g_app_on_startup);
-    else                   LOGW("dlsym on_startup -> null (fallback suave)");
+    if (g_app_instance)   LOGI("dlopen OK: instance   = %p", (void*)g_app_instance);
+    else                  LOGW("dlsym instance -> null (fallback suave)");
+    if (g_app_on_startup) LOGI("dlopen OK: on_startup  = %p", (void*)g_app_on_startup);
+    else                  LOGW("dlsym on_startup -> null (fallback suave)");
     if (g_app_on_activate) LOGI("dlopen OK: on_activate = %p", (void*)g_app_on_activate);
-    else                   LOGW("dlsym on_activate -> null (fallback suave)");
+    else                  LOGW("dlsym on_activate -> null (fallback suave)");
 
     g_ink_base_loaded = true;
     return true;
@@ -262,14 +269,22 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
              "Continuando sin gtk_init() explícito - on_startup() manejará lo necesario.");
     }
 
-    // on_startup es el "arranque GTK" real de Inkscape
-    if (g_app_on_startup) {
-        LOGI("Calling InkscapeApplication::on_startup()... [display=%p]", display);
-        g_app_on_startup();
-        LOGI("InkscapeApplication::on_startup() returned OK");
-        return TRUE;
     }
-    LOGE("g_app_on_startup is null!");
+
+// on_startup es el "arranque GTK" real de Inkscape - obtener instancia singleton y llamar
+    if (g_app_on_startup && g_app_instance) {
+        void* app_instance = g_app_instance();
+        if (app_instance) {
+            LOGI("InkscapeApplication::instance() = %p, calling on_startup()... [display=%p]", app_instance, display);
+            g_app_on_startup(app_instance);
+            LOGI("InkscapeApplication::on_startup() returned OK");
+            return TRUE;
+        } else {
+            LOGE("InkscapeApplication::instance() returned null!");
+            return FALSE;
+        }
+    }
+    LOGE("g_app_on_startup or g_app_instance is null!");
     return FALSE;
 }
 
@@ -282,10 +297,18 @@ gboolean inkscape_canvas_create(ANativeWindow* window, int width, int height, fl
     // El canvas Android real vive en Kotlin (SurfaceView); aqui damos a
     // entender que el render va a ANativeWindow. La activacion real se hace
     // via on_activate -> crea desktop/canvas internamente.
-    if (g_app_on_activate) {
-        g_app_on_activate();
-        return TRUE;
+    if (g_app_on_activate && g_app_instance) {
+        void* app_instance = g_app_instance();
+        if (app_instance) {
+            LOGI("InkscapeApplication::instance() = %p, calling on_activate()...", app_instance);
+            g_app_on_activate(app_instance);
+            return TRUE;
+        } else {
+            LOGE("InkscapeApplication::instance() returned null!");
+            return FALSE;
+        }
     }
+    LOGE("g_app_on_activate or g_app_instance is null!");
     return FALSE;
 }
 
