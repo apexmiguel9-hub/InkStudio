@@ -232,17 +232,27 @@ jobs:
           RESTORED=0
           # Intentar restaurar la misma firma del ultimo build (para que
           # actualizaciones sobre APKs previos no fallen por cambio de key)
-          ARTIFACT_ID=$(gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts?per_page=100" \
-            --jq '.artifacts[] | select(.name=="inkstudio-release-keystore" and .expired==false) | .id' 2>/dev/null | head -1)
-          if [ -n "$ARTIFACT_ID" ]; then
-            echo "KEYSIGN: restaurando keystore del artifact $ARTIFACT_ID"
-            gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/key.zip"
-            unzip -o "$RUNNER_TEMP/key.zip" -d "$KEYDIR" >/dev/null 2>&1 || true
-            if [ -f "$KEYSTORE" ]; then
-              RESTORED=1
-              echo "KEYSIGN: keystore RESTAURADO (firma estable)"
+          # Con reintentos para manejar fallos transitorios de red (exit 141 = SIGPIPE)
+          for attempt in 1 2 3; do
+            ARTIFACT_ID=$(gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts?per_page=100" \
+              --jq '.artifacts[] | select(.name=="inkstudio-release-keystore" and .expired==false) | .id' 2>/dev/null | head -1)
+            if [ -n "$ARTIFACT_ID" ]; then
+              echo "KEYSIGN: intentando restaurar keystore del artifact $ARTIFACT_ID (intento $attempt/3)"
+              if gh api "repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip" > "$RUNNER_TEMP/key.zip" 2>/dev/null; then
+                unzip -o "$RUNNER_TEMP/key.zip" -d "$KEYDIR" >/dev/null 2>&1 || true
+                if [ -f "$KEYSTORE" ]; then
+                  RESTORED=1
+                  echo "KEYSIGN: keystore RESTAURADO (firma estable)"
+                  break
+                fi
+              fi
+              echo "KEYSIGN: intento $attempt falló, reintentando..."
+              sleep 5
+            else
+              echo "KEYSIGN: no se encontró artifact de keystore"
+              break
             fi
-          fi
+          done
 
           if [ "$RESTORED" -eq 0 ]; then
             echo "KEYSIGN: generando nuevo keystore release con keytool"
