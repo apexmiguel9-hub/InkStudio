@@ -1,10 +1,11 @@
 /**
+#include <cstring>
  * JNI Bridge para Inkscape en Android.
  * Conecta Kotlin (InkscapeEngine) con C++ (libinkscape_base.so - la REAL de 63MB).
  *
  * IMPORTANTE (verificado con nm -D):
  *   libinkscape_base.so exporta TODA su API como C++ mangled (_ZN19InkscapeApplication...)
- *   NO existe NINGUN simbolo C plano "inkscape_gtk_init/canvas_*/input_*/file_*".
+ *   NO existe NINGUN simbolo C plano "inkscape_gtk_init/canvas_ * /input_ * /file_*".
  *
  * ESTE bridge define esas funciones C planas DENTRO de si mismo, y en RUNTIME
  * hace dlopen("libinkscape_base.so") + dlsym de los simbolos C++ mangled REALES.
@@ -18,7 +19,14 @@
 #include <android/native_window_jni.h>
 #include <android/log.h>
 #include <dlfcn.h>
+#include <algorithm>
+#include <vector>
 #include <cstdio>
+#include <mutex>
+#include <unordered_map>
+#include <utility>
+#include <cstdint>
+#include <memory>
 
 #define LOG_TAG "InkscapeJNI"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -203,10 +211,6 @@ gboolean inkscape_file_new() {
     return FALSE;
 }
 
-gboolean inkscape_gtk_shutdown() {
-    inkscape_base_unload();
-    return TRUE;
-}
 
 } // extern "C"
 
@@ -219,6 +223,9 @@ static float g_density = 1.0f;
 
 // Touch tracking para multi-touch
 static std::unordered_map<int, std::pair<double, double>> g_touch_points;
+
+// Mutex global para proteger estado de inicializacion/render
+static std::mutex g_mutex;
 
 extern "C" {
     inline void inkscape_gtk_init_android() {
