@@ -9,6 +9,8 @@ class InkStudioApplication : Application() {
     companion object {
         private const val TAG = "InkStudio"
         @Volatile private var sNativeLoaded = false
+
+        fun isNativeLoaded(): Boolean = sNativeLoaded
     }
 
     override fun onCreate() {
@@ -52,9 +54,5 @@ class InkStudioApplication : Application() {
 
         sNativeLoaded = true
         Log.i(TAG, "Native libraries loaded: $loaded/${libs.size}")
-    }
-
-    companion object {
-        fun isNativeLoaded(): Boolean = sNativeLoaded
     }
 }

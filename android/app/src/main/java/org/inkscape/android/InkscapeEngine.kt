@@ -7,6 +7,7 @@ import android.view.Surface
 import android.view.TextureView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
@@ -31,7 +32,8 @@ class InkscapeEngine(private val context: Context) {
     private var _surfaceDensity = 1.0f
 
     // Coroutine scope para callbacks async
-    private val scope = CoroutineScope(Dispatchers.Default)
+    private val engineJob = Job()
+    private val scope = CoroutineScope(Dispatchers.Default + engineJob)
 
     init {
         // Verificar que las libs nativas están cargadas
@@ -114,7 +116,7 @@ class InkscapeEngine(private val context: Context) {
         if (!_isInitialized) return
         nativeShutdown()
         _isInitialized = false
-        scope.cancel()
+        engineJob.cancel()
         Log.i(TAG, "InkscapeEngine shutdown")
     }
 
@@ -123,7 +125,7 @@ class InkscapeEngine(private val context: Context) {
     private var _renderScheduled = false
 
     private fun renderLoop() {
-        while (_isInitialized && !scope.isActive) {
+        while (_isInitialized && engineJob.isActive) {
             if (nativeRender() != INIT_OK) {
                 Log.e(TAG, "nativeRender failed")
                 break

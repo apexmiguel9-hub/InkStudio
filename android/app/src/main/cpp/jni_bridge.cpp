@@ -446,7 +446,7 @@ Java_org_inkscape_android_InkscapeEngine_nativeSaveFile(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_org_inkscape_android_InkscapeEngine_nativeNewFile(
+Java_org_inkscape_android_InkscapeEngine_nativeNewDocument(
     JNIEnv* env, jobject thiz) {
 
     if (!g_initialized) return JNI_FALSE;

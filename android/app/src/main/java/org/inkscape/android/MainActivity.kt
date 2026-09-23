@@ -7,12 +7,14 @@ import android.os.Bundle
 import android.util.Log
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.TextureView
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.lifecycleScope
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 import org.inkscape.android.databinding.ActivityMainBinding
 
