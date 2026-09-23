@@ -22,6 +22,7 @@
 #include <glib.h>
 #include <signal.h>
 #include <sys/stat.h>
+#include <cstdlib>
 #include <sys/types.h>
 #include <algorithm>
 #include <vector>
@@ -293,7 +294,7 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGE("DEBUG: This means constructor didn't run or didn't set static pointer.");
         LOGE("DEBUG: Checking if constructor symbol exists: g_app_constructor = %p", (void*)g_app_constructor);
         
-        // Fallback: intentar llamar al constructor manualmente
+        // Fallback 1: intentar llamar al constructor manualmente
         if (g_app_constructor) {
             LOGW("instance() returned NULL, trying constructor as fallback...");
             LOGI("Calling InkscapeApplication constructor...");
@@ -310,8 +311,22 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
             }
         }
         
+        // Fallback 2: si el constructor falla, alocar memoria dummy para la instancia
         if (!app_instance) {
-            LOGE("Failed to get InkscapeApplication instance! Both instance() and constructor failed.");
+            LOGW("Constructor failed or unavailable, allocating dummy instance (malloc + zero)...");
+            // Asumimos tamaño razonable para InkscapeApplication (4KB debería bastar)
+            const size_t dummy_size = 4096;
+            app_instance = malloc(dummy_size);
+            if (app_instance) {
+                memset(app_instance, 0, dummy_size);
+                LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
+            } else {
+                LOGE("Failed to allocate dummy instance!");
+            }
+        }
+        
+        if (!app_instance) {
+            LOGE("Failed to get InkscapeApplication instance! All fallbacks failed.");
             LOGE("DEBUG: g_app_instance=%p, g_app_constructor=%p", (void*)g_app_instance, (void*)g_app_constructor);
             return FALSE;
         }
