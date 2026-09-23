@@ -188,6 +188,26 @@ jobs:
           ls -la "$DEST"
 
       # ---------------------------------------------------------
+      # 4b. Reordenar .init_array de libinkscape_base.so (fix SIOF)
+      #     Los ctors estaticos de glibmm/gtkmm deben ejecutarse ANTES
+      #     que los de Inkscape (si no -> SIGSEGV en dlopen: ModelColumns
+      #     usa los std::map de value_custom.cc sin construir). El script
+      #     hace stable-partition in-place sobre el .init_array.
+      # ---------------------------------------------------------
+      - name: Reorder .init_array libinkscape_base.so (fix SIOF)
+        run: |
+          set -euo pipefail
+          if ! command -v aarch64-linux-gnu-objdump >/dev/null 2>&1; then
+            sudo apt-get install -y binutils-aarch64-linux-gnu >/dev/null 2>&1 || \
+              { sudo apt-get update -qq && sudo apt-get install -y binutils-aarch64-linux-gnu; }
+          fi
+          command -v aarch64-linux-gnu-objdump >/dev/null 2>&1 || { echo "ERROR: objdump aarch64 no disponible"; exit 1; }
+          DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
+          python3 "$GITHUB_WORKSPACE/android/scripts/reorder_init_array.py" \
+            "$DEST/libinkscape_base.so" /usr/bin/aarch64-linux-gnu-objdump
+          echo "=== .init_array reordenado OK (ver FRONT/LATE + anclas arriba) ==="
+
+      # ---------------------------------------------------------
       # 5. JDK 17
       # ---------------------------------------------------------
       - name: Setup JDK 17
