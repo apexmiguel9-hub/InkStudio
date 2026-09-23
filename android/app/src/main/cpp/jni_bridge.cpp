@@ -154,16 +154,29 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
     // 2) Instalar handler por defecto (dominio NULL) que loguea a logcat SIN abortar
     g_log_set_default_handler(inkscape_android_log_handler, NULL);
     
-    // 3) También instalar handler para dominios conocidos de Inkscape/GLib/GTK
-    static const char* known_domains[] = {
+    // 3) Instalar handler para TODOS los niveles en TODOS los dominios conocidos
+    //    Incluye dominios NULL + GLib/GTK + dominios de Inkscape
+    static const char* all_domains[] = {
         NULL, "GLib", "Gtk", "Gdk", "Gio", "GModule", "GObject", 
-        "Inkscape", "InkscapeApplication", "Preferences", "AutoSave"
+        "Inkscape", "InkscapeApplication", "Preferences", "AutoSave",
+        "GC", "Cairo", "Pango", "Fontconfig"
     };
-    for (const char* dom : known_domains) {
+    for (const char* dom : all_domains) {
         g_log_set_handler(dom, (GLogLevelFlags)(G_LOG_LEVEL_MASK | G_LOG_FLAG_FATAL | G_LOG_FLAG_RECURSION),
                           inkscape_android_log_handler, NULL);
     }
+    
+    // 4) Re-forzar always_fatal=0 por si Inkscape lo cambió
+    g_log_set_always_fatal((GLogLevelFlags)0);
+    
     LOGI("GLib log handlers installed (non-abort, always_fatal=0)");
+
+    // 5) Preparar entorno para Preferences (evita "Permission denied" en profile dir)
+    //    Inkscape busca prefs en $HOME/.config/inkscape - en Android usamos getFilesDir()
+    //    Pero no tenemos Context aquí; el Java side ya debería haber configurado.
+    //    Como fallback, seteamos HOME a /data/data/org.inkscape.android/files
+    setenv("HOME", "/data/data/org.inkscape.android/files", 1);
+    LOGI("HOME set for Inkscape prefs");
 
     // on_startup es el "arranque GTK" real de Inkscape
     if (g_app_on_startup) {
