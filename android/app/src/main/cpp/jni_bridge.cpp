@@ -77,14 +77,17 @@ static bool  g_ink_base_loaded = false;
 //   _ZN19InkscapeApplication8instanceEv     = InkscapeApplication::instance() [static singleton getter]
 //   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()   [non-static method]
 //   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()  [non-static method]
+//   _ZN19InkscapeApplicationC1Ev             = InkscapeApplication::InkscapeApplication() [constructor]
 //   _ZN19InkscapeApplication13createDesktopEP10SPDocumentbb
 using AppInstanceFn    = void* (*)();          // static InkscapeApplication* instance()
 using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
 using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
+using AppConstructorFn = void* (*)();          // InkscapeApplication* InkscapeApplication()
 
 static AppInstanceFn    g_app_instance   = nullptr;
 static AppOnStartupFn   g_app_on_startup = nullptr;
 static AppOnActivateFn  g_app_on_activate = nullptr;
+static AppConstructorFn g_app_constructor = nullptr;
 
 static bool inkscape_base_load() {
     if (g_ink_base_loaded) return true;
@@ -103,13 +106,17 @@ static bool inkscape_base_load() {
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication10on_startupEv"));
     g_app_on_activate = reinterpret_cast<AppOnActivateFn>(
         dlsym(g_ink_base_handle, "_ZN19InkscapeApplication11on_activateEv"));
+    g_app_constructor = reinterpret_cast<AppConstructorFn>(
+        dlsym(g_ink_base_handle, "_ZN19InkscapeApplicationC1Ev"));
 
-    if (g_app_instance)   LOGI("dlopen OK: instance   = %p", (void*)g_app_instance);
-    else                  LOGW("dlsym instance -> null (fallback suave)");
-    if (g_app_on_startup) LOGI("dlopen OK: on_startup  = %p", (void*)g_app_on_startup);
-    else                  LOGW("dlsym on_startup -> null (fallback suave)");
-    if (g_app_on_activate) LOGI("dlopen OK: on_activate = %p", (void*)g_app_on_activate);
-    else                  LOGW("dlsym on_activate -> null (fallback suave)");
+    if (g_app_instance)     LOGI("dlopen OK: instance      = %p", (void*)g_app_instance);
+    else                    LOGW("dlsym instance -> null (fallback suave)");
+    if (g_app_on_startup)   LOGI("dlopen OK: on_startup    = %p", (void*)g_app_on_startup);
+    else                    LOGW("dlsym on_startup -> null (fallback suave)");
+    if (g_app_on_activate)  LOGI("dlopen OK: on_activate   = %p", (void*)g_app_on_activate);
+    else                    LOGW("dlsym on_activate -> null (fallback suave)");
+    if (g_app_constructor)  LOGI("dlopen OK: constructor   = %p", (void*)g_app_constructor);
+    else                    LOGW("dlsym constructor -> null (fallback suave)");
 
     g_ink_base_loaded = true;
     return true;
@@ -120,8 +127,10 @@ static void inkscape_base_unload() {
         dlclose(g_ink_base_handle);
         g_ink_base_handle = nullptr;
     }
+    g_app_instance = nullptr;
     g_app_on_startup = nullptr;
     g_app_on_activate = nullptr;
+    g_app_constructor = nullptr;
     g_ink_base_loaded = false;
 }
 
