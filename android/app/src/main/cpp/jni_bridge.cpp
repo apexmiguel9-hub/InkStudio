@@ -73,10 +73,12 @@ static void* g_ink_base_handle = nullptr;
 static bool  g_ink_base_loaded = false;
 
 // Mangled C++ reales que la lib EXPORTA (verificados con nm -D):
+//   _ZN19InkscapeApplicationC1Ev           = InkscapeApplication::InkscapeApplication() [constructor]
 //   _ZN19InkscapeApplication8instanceEv     = InkscapeApplication::instance() [static singleton getter]
 //   _ZN19InkscapeApplication10on_startupEv   = InkscapeApplication::on_startup()   [non-static method]
 //   _ZN19InkscapeApplication11on_activateEv  = InkscapeApplication::on_activate()  [non-static method]
 //   _ZN19InkscapeApplication13createDesktopEP10SPDocumentbb
+using AppConstructorFn = void* (*)();         // constructor: InkscapeApplication* InkscapeApplication()
 using AppInstanceFn    = void* (*)();          // static InkscapeApplication* instance()
 using AppOnStartupFn   = void (*)(void*);      // void on_startup()   [non-static, takes 'this']
 using AppOnActivateFn  = void (*)(void*);      // void on_activate()  [non-static, takes 'this']
