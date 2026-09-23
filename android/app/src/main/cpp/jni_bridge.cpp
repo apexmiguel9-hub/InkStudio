@@ -21,6 +21,8 @@
 #include <dlfcn.h>
 #include <glib.h>
 #include <signal.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <algorithm>
 #include <vector>
 #include <cstdio>
@@ -263,7 +265,8 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
             dlsym(g_ink_base_handle, "gtk_init"));
         if (gtk_init_fn) {
             int dummy_argc = 1;
-            char* dummy_argv[] = { const_cast<char*>("inkscape"), nullptr };
+            char* dummy_argv_arr[] = { const_cast<char*>("inkscape"), nullptr };
+            char** dummy_argv = dummy_argv_arr;
             gtk_init_fn(&dummy_argc, &dummy_argv);
             LOGI("gtk_init() called");
             // Re-check display
