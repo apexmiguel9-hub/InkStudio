@@ -60,53 +60,47 @@ include_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a/include)
 link_directories(${CMAKE_SOURCE_DIR}/../jniLibs/arm64-v8a)
 
 # Librerías a linkear (orden de dependencias)
+# ======================================================================
+# INKSCAPE_LIBS: MÍNIMO COMBATIBLE (SOLO lo que el bridge usa real)
+# ----------------------------------------------------------------------
+# El bridge (jni_bridge.cpp) hace 2 únicos grupos de llamadas:
+#   1. inkscape_gtk_init / inkscape_canvas_* / inkscape_input_*  => libinkscape.so
+#      (esa .so YA incorpora ESTÁTICAMENTE gtkmm/pangomm/cairomm/glibmm/giomm/
+#       sigc/boost, porque build-inkscape linkeó los .a tier2 dentro del .so)
+#   2. API GTK4 directa (gtk_window_new, gdk surface, cairo)     => libgtk-4.so
+#
+# NADA más: NO linkear -lgtkmm-4.0, -lpangomm, -lcairomm, -lglibmm,
+# -lgiomm, -lsigc, -lcairomm… (no hay .so exportado; estaría mal de
+# todos modos porque son símbolos estáticos dentro de libinkscape.so).
+# ======================================================================
 set(INKSCAPE_LIBS
-    inkscape
-    inkview
-    inkscape_base
-    gtk-4
-    gtkmm-4.0
-    pangomm-2.48
-    cairomm-1.16
-    glibmm-2.68
-    giomm-2.68
-    sigc-3.0
-    cairo
-    cairo-gobject
-    pango-1.0
-    pangocairo-1.0
-    pangoft2-1.0
-    gdk_pixbuf-2.0
-    graphene-1.0
-    gobject-2.0
-    glib-2.0
-    gio-2.0
-    gmodule-2.0
-    freetype
-    harfbuzz
-    fribidi
-    pixman-1
-    epoxy
-    xml2
-    png16
-    jpeg
-    z
-    lzma
-    zstd
-    brotlidec
-    brotlicommon
-    expat
-    pcre2-8
-    ffi
-    intl
-    iconv
-    lcms2
-    dl
-    log
-    android
-    m
+    inkscape        # libinkscape.so  (API interna inkscape_gtk_init/canvas/input)
+    inkview         # libinkview.so   (inkscape_canvas_render helpers)
+    inkscape_base   # libinkscape_base.so (utilidades base internas)
+    gtk-4           # libgtk-4.so     (gtk_window/gdk/cairo directos del bridge)
+    gdk_pixbuf-2.0  # libgdk_pixbuf-2.0.so (gdk_pixbuf que usa gtk-4 en runtime)
+    cairo           # libcairo.so     (cairo_surface_t que usa gdk en runtime)
+    cairo-gobject   # libcairo-gobject.so (registro gobject de cairo)
+    pango-1.0       # libpango-1.0.so (pango layout usado por gtk-4 en runtime)
+    pangocairo-1.0  # libpangocairo-1.0.so
+    freetype        # libfreetype.so  (fuentes)
+    fribidi         # libfribidi.so
+    harfbuzz        # libharfbuzz.so
+    glib-2.0        # libglib-2.0.so
+    gio-2.0         # libgio-2.0.so
+    gobject-2.0     # libgobject-2.0.so
+    gmodule-2.0     # libgmodule-2.0.so
+    graphene-1.0    # libgraphene-1.0.so
+    epoxy           # libepoxy.so
+    xml2            # libxml2.so
+    z               # libz.so
+    dl              # dlopen/dlsym
+    log             # __android_log_print
+    android         # ANativeWindow
+    m               # matematicas
     atomic
 )
+
 
 add_library(inkscape_jni SHARED jni_bridge.cpp)
 
