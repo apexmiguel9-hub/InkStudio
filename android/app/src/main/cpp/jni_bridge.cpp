@@ -286,20 +286,38 @@ gboolean inkscape_gtk_init(int* argc, char*** argv) {
         LOGE("InkscapeApplication::instance() returned NULL! Singleton not initialized.");
         LOGE("DEBUG: This means constructor didn't run or didn't set static pointer.");
         
-        // SKIP constructor entirely - it crashes due to SIOF (reorder not working on CI lib)
-        // Go straight to malloc fallback: allocate dummy zeroed instance
-        LOGW("Skipping constructor (crashes due to SIOF), allocating dummy instance (malloc + zero)...");
-        const size_t dummy_size = 4096;
-        app_instance = malloc(dummy_size);
-        if (app_instance) {
-            memset(app_instance, 0, dummy_size);
-            LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
-        } else {
-            LOGE("Failed to allocate dummy instance!");
+        // Try calling constructor - reorder script should have fixed SIOF
+        if (g_app_constructor) {
+            LOGW("instance() returned NULL, trying constructor as fallback...");
+            LOGI("Calling InkscapeApplication constructor...");
+            app_instance = g_app_constructor();
+            LOGI("InkscapeApplication constructor returned: %p", app_instance);
+            
+            // If constructor worked, try getting instance again
+            if (app_instance && g_app_instance) {
+                void* new_instance = g_app_instance();
+                if (new_instance) {
+                    LOGI("Constructor worked! instance() now returns: %p", new_instance);
+                    app_instance = new_instance;
+                }
+            }
+        }
+        
+        // Fallback 2: if constructor fails, allocate dummy instance
+        if (!app_instance) {
+            LOGW("Constructor failed or unavailable, allocating dummy instance (malloc + zero)...");
+            const size_t dummy_size = 4096;
+            app_instance = malloc(dummy_size);
+            if (app_instance) {
+                memset(app_instance, 0, dummy_size);
+                LOGI("Allocated dummy InkscapeApplication instance at %p (size=%zu)", app_instance, dummy_size);
+            } else {
+                LOGE("Failed to allocate dummy instance!");
+            }
         }
         
         if (!app_instance) {
-            LOGE("Failed to get InkscapeApplication instance!");
+            LOGE("Failed to get InkscapeApplication instance! All fallbacks failed.");
             return FALSE;
         }
     }
