@@ -1,19 +1,80 @@
 diff --git a/src/inkscape.cpp b/src/inkscape.cpp
-index ae6a4cf..b9d4207 100644
+index ae6a4cf..53fbf1a 100644
 --- a/src/inkscape.cpp
 +++ b/src/inkscape.cpp
-@@ -16,6 +16,10 @@
+@@ -16,6 +16,11 @@
   */
  
  #include <unistd.h>
 +#if defined(__ANDROID__)
-+#include <execinfo.h>
++#include <unwind.h>
++#include <dlfcn.h>
 +#include <fcntl.h>
 +#endif
  
  #include <boost/stacktrace.hpp>
  #ifdef _WIN32
-@@ -269,6 +273,23 @@ Application::crash_handler (int /*signum*/)
+@@ -242,6 +247,59 @@ Application::~Application()
+     Inkscape::Preferences::unload();
+ }
+ 
++#if defined(__ANDROID__)
++// FASE8: unwinding portable — backtrace() solo existe desde Android API 30
++// (minSdk=29), _Unwind_Backtrace existe en todas las APIs del NDK.
++struct Fase8UnwindCtx
++{
++    void **frames;
++    int count;
++    int max;
++};
++
++static _Unwind_Reason_Code
++fase8_unwind_cb (struct _Unwind_Context *ctx, void *arg)
++{
++    Fase8UnwindCtx *c = static_cast<Fase8UnwindCtx *>(arg);
++    if (c->count >= c->max) {
++        return _URC_END_OF_STACK;
++    }
++    c->frames[c->count++] = reinterpret_cast<void *>(_Unwind_GetIP(ctx));
++    return _URC_NO_REASON;
++}
++
++static void
++fase8_dump_backtrace (int fd)
++{
++    void *frames[128];
++    Fase8UnwindCtx ctx = {frames, 0, 128};
++    _Unwind_Backtrace(fase8_unwind_cb, &ctx);
++    char line[256];
++    for (int i = 0; i < ctx.count; i++) {
++        Dl_info info;
++        void *base = frames[i];
++        const char *sym = "?";
++        const char *file = "?";
++        if (dladdr(frames[i], &info)) {
++            if (info.dli_sname) {
++                sym = info.dli_sname;
++                base = info.dli_saddr;
++            }
++            if (info.dli_fname) {
++                file = info.dli_fname;
++            }
++        }
++        int n = g_snprintf(line, sizeof(line), "#%02d %p %s+0x%tx (%s)\n",
++                           i, frames[i], sym,
++                           reinterpret_cast<char *>(frames[i]) - reinterpret_cast<char *>(base),
++                           file);
++        if (n > 0) {
++            write(fd, line, n);
++        }
++    }
++}
++#endif
++
+ void
+ Application::crash_handler (int /*signum*/)
+ {
+@@ -269,6 +327,20 @@ Application::crash_handler (int /*signum*/)
      }
      recursion = true;
  
@@ -21,16 +82,13 @@ index ae6a4cf..b9d4207 100644
 +    {
 +        /* FASE8-DUMP: volcar el stack del hilo que crasheó ANTES de que el propio
 +         * crash-handler pueda crashear (dialog-crash.glade / boost::stacktrace).
-+         * Este handler corre EN el stack del hilo con SIGSEGV => esto es el crash #1. */
-+        void *bt[256];
-+        int n = backtrace(bt, 256);
++         * Este handler corre EN el stack del hilo con SIGSEGV => este es el crash #1. */
 +        int fd = open("/storage/emulated/0/Android/data/org.inkscape.android/files/crash-stack.txt",
 +                      O_CREAT | O_WRONLY | O_TRUNC, 0644);
 +        if (fd >= 0) {
-+            backtrace_symbols_fd(bt, n, fd);
++            fase8_dump_backtrace(fd);
 +            close(fd);
 +        }
-+        backtrace_symbols_fd(bt, n, 2); /* stderr, por si acaso va a logcat */
 +    }
 +#endif
 +
