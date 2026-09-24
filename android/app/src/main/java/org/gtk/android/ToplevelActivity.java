@@ -110,8 +110,8 @@ public class ToplevelActivity extends Activity {
 
 			@GlibContext.GtkThread
 			public Surface(long identifier) {
-				android.util.Log.i("PRESENT", "PRESENT-025 " + Thread.currentThread().getName() + " Surface ctor enter " + Long.toHexString(identifier));
 				super(ToplevelActivity.this);
+				android.util.Log.i("PRESENT", "PRESENT-025 " + Thread.currentThread().getName() + " Surface ctor enter " + Long.toHexString(identifier));
 				setVisibility(GONE);
 
 				try {
