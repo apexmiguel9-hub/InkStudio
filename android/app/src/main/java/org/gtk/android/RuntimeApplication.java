@@ -40,7 +40,10 @@ public class RuntimeApplication extends Application {
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		long t0 = System.currentTimeMillis();
+		android.util.Log.i("RuntimeApplication", "onCreate: llamando writeResources");
 		SystemFilesystem.writeResources(this);
+		android.util.Log.i("RuntimeApplication", "onCreate: writeResources devolvio en " + (System.currentTimeMillis() - t0) + " ms; arrancando runtime");
 		startRuntime(System.mapLibraryName(getApplicationLibrary()));
 	}
 

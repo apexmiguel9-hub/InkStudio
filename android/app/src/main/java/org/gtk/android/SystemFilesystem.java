@@ -32,8 +32,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import android.os.Build;
+import android.util.Log;
 
 public final class SystemFilesystem {
+	private static final String TAG = "SystemFilesystem";
 	private static final String fingerprint = "afpr";
 	private static final int fprSize = 128;
 
@@ -62,7 +64,12 @@ public final class SystemFilesystem {
 	private static void copyFromAssets(Context context, String path, File destination) throws IOException {
 		String[] files = context.getAssets().list(path);
 		if (files.length == 0) {
-			InputStream istream = context.getAssets().open(path);
+			InputStream istream;
+			try {
+				istream = context.getAssets().open(path);
+			} catch (IOException e) {
+				throw new IOException("asset: '" + path + "' (list vacio + open fallo: dir vacio o no empaquetado)", e);
+			}
 
 			destination.createNewFile();
 			OutputStream ostream = new FileOutputStream(destination);
@@ -79,19 +86,34 @@ public final class SystemFilesystem {
 	}
 
 	private static void doWriteResources(Context context, Logger logger) {
+		long t0 = System.currentTimeMillis();
+		Log.i(TAG, "doWriteResources: limpiando " + context.getFilesDir());
 		try {
 			File dir = context.getFilesDir();
 			cleanDirectory(dir);
+			Log.i(TAG, "doWriteResources: copiando assets a " + dir);
 			copyFromAssets(context, "", dir);
+			Log.i(TAG, "doWriteResources: copia OK en " + (System.currentTimeMillis() - t0) + " ms, ficheros: " + countFiles(dir));
 		} catch (IOException e) {
 			logger.log(Level.SEVERE, "Failed writing assets to filesystem: " + e);
+			Log.e(TAG, "doWriteResources: FALLO tras " + (System.currentTimeMillis() - t0) + " ms", e);
 		}
+	}
+
+	private static int countFiles(File dir) {
+		int n = 0;
+		File[] files = dir.listFiles();
+		if (files == null) return 0;
+		for (File f : files)
+			n += f.isDirectory() ? countFiles(f) : 1;
+		return n;
 	}
 
 	public static void writeResources(Context context) {
 		Logger logger = Logger.getLogger("glue");
 		try {
 			InputStream assetfprStream = context.getAssets().open(fingerprint);
+			Log.i(TAG, "writeResources: afpr presente en assets, evaluando copia");
 			try {
 				File filefpr = new File(context.getFilesDir(), fingerprint);
 				InputStream filefprStream = new FileInputStream(filefpr);
@@ -104,13 +126,19 @@ public final class SystemFilesystem {
 				filefprStream.read(filefprData);
 				filefprStream.close();
 
-				if (!Arrays.equals(assetfprData, filefprData))
+				if (!Arrays.equals(assetfprData, filefprData)) {
+					Log.i(TAG, "writeResources: fingerprint distinto -> recopiar");
 					doWriteResources(context, logger);
+				} else {
+					Log.i(TAG, "writeResources: fingerprint igual -> salto copia");
+				}
 			} catch (IOException e) {
+				Log.i(TAG, "writeResources: sin afpr en filesDir -> copia completa");
 				doWriteResources(context, logger);
 			}
 		} catch (IOException e) {
 			logger.log(Level.WARNING, "No fingerprint file in assets, assuming no filesystem copy needed");
+			Log.w(TAG, "writeResources: NO hay afpr en assets -> salto copia (sin datos!)");
 		}
 	}
 }
