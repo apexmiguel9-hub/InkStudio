@@ -274,6 +274,24 @@ jobs:
           fi
           echo "OK: 4 archivos parcheados a cairo_surface_get/set_device_scale C API con const_cast"
 
+      # FASE8: instrumentación. El "no abre el editor" = SIGSEGV al crear la ventana
+      # desde plantilla; Inkscape captura SIGSEGV con su propio handler (nunca llega a
+      # debuggerd => sin tombstones) y el crash-handler muere 2ª vez (~68ms tras cargar
+      # dialog-crash.glade) enmascarando el crash real. El handler corre EN el stack del
+      # hilo que crasheó => un backtrace() al inicio ES el stack del crash #1 (el que
+      # impide abrir el editor). Se vuelca a un archivo legible por adb en el external
+      # files dir: /storage/emulated/0/Android/data/org.inkscape.android/files/crash-stack.txt
+      - name: Parche FASE8 (dump stack real del crash en crash_handler)
+        run: |
+          set -euo pipefail
+          cd inkscape
+          git apply "$GITHUB_WORKSPACE/scripts/patches/fase8-crash-dump.patch"
+          grep -q 'FASE8-DUMP' src/inkscape.cpp \
+            || { echo "ERROR: el parche FASE8 no aplicó (¿cambió upstream la línea?)"; exit 1; }
+          grep -q 'crash-stack.txt' src/inkscape.cpp \
+            || { echo "ERROR: falta el path de crash-stack.txt en inkscape.cpp"; exit 1; }
+          echo "OK: crash_handler instrumentado (FASE8-DUMP -> crash-stack.txt)"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail
