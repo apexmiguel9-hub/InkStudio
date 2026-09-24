@@ -169,7 +169,8 @@ jobs:
           DEST="$GITHUB_WORKSPACE/android/app/src/main/jniLibs/arm64-v8a"
           # DT_NEEDED completo de libinkscape_base.so que NO es system lib:
           for lib in libinkscape.so libinkview.so libinkscape_base.so libgtk-4.so \
-                     lib2geom.so libicudata.so; do
+                     lib2geom.so libicudata.so \
+                     libglib-2.0.so libgobject-2.0.so libgio-2.0.so libgmodule-2.0.so; do
             [ -f "$DEST/$lib" ] || { echo "ERROR: falta $lib (DT_NEEDED no resuelto -> crash en runtime)"; exit 1; }
             size=$(stat -c%s "$DEST/$lib")
             [ "$size" -gt 1024 ] || { echo "ERROR: $lib es stub ($size bytes), no una lib real"; exit 1; }
