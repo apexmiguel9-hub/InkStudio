@@ -436,6 +436,25 @@ public class ToplevelActivity extends Activity {
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
 		android.util.Log.i("PRESENT", "PRESENT-010 " + Thread.currentThread().getName() + " onCreate enter");
+		android.util.Log.i("PRESENT", "WATCHDOG armado (dump de stacks a los 4s y 10s; diagnostico, no cambia comportamiento)");
+		Thread watchdog = new Thread(() -> {
+			try { Thread.sleep(4000); } catch (InterruptedException e) { return; }
+			for (int round = 0; round < 2; round++) {
+				String mark = round == 0 ? "WATCHDOG-4s" : "WATCHDOG-10s";
+				android.util.Log.i("PRESENT", mark + " pid=" + android.os.Process.myPid() + " dump de stacks");
+				for (java.util.Map.Entry<Thread, StackTraceElement[]> ent : Thread.getAllStackTraces().entrySet()) {
+					Thread t = ent.getKey();
+					StringBuilder sb = new StringBuilder(mark + " THREAD " + t.getName() + " id=" + t.getId() + " state=" + t.getState());
+					for (StackTraceElement el : ent.getValue())
+						sb.append("\n").append(mark + "   at ").append(el);
+					android.util.Log.i("PRESENT", sb.toString());
+				}
+				if (round == 0) { try { Thread.sleep(6000); } catch (InterruptedException e) { return; } }
+			}
+		});
+		watchdog.setName("PRESENT-Watchdog");
+		watchdog.setDaemon(true);
+		watchdog.start();
 		this.fullscreenState = false;
 
 		super.onCreate(savedInstanceState);
@@ -570,6 +589,7 @@ public class ToplevelActivity extends Activity {
 			}
 			updateToplevelState();
 		});
+		android.util.Log.i("PRESENT", "PRESENT-052 " + Thread.currentThread().getName() + " postWindowConfiguration exit");
 	}
 
 	public void postTitle(String title) {
