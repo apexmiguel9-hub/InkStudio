@@ -37,6 +37,16 @@ public final class GlibContext {
 
 	public static native void runOnMain(Runnable runnable);
 
+	/**
+	 * FASE 6B: aplica el cambio de night-mode pendiente (marcado durante el
+	 * bind inicial, cuando el hilo principal aún esperaba el latch de
+	 * blockForMain). Consume el pendiente antes de emitir setting_changed +
+	 * notify: no-op si no hay nada pendiente (no emite notify dos veces).
+	 * Debe invocarse DESPUÉS de blockForMain() y vía runOnMain() para que
+	 * corra en el hilo GTK con el hilo principal libre.
+	 */
+	public static native void commitPendingNightMode();
+
 	@UiThread
 	public static <T> T blockForMain(Supplier<T> runnable) {
 		CountDownLatch barrier = new CountDownLatch(1);

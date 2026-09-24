@@ -455,7 +455,11 @@ public class ToplevelActivity extends Activity {
 					Logger.getLogger("Toplevel").log(Level.SEVERE, "Call to activate did not spawn a new window");
 			}
 		});
-		android.util.Log.i("F6", "F6-ONCREATE-RELEASED " + Thread.currentThread().getName() + " blockForMain devolvio: CountDownLatch liberado, onCreate continua");
+		android.util.Log.i("F6B", "F6B-ONCREATE-RELEASED " + Thread.currentThread().getName() + " blockForMain devolvio: CountDownLatch liberado, onCreate continua");
+		// FASE 6B: el commit de night-mode pendiente debe dispararse AHORA, con
+		// el latch liberado y el hilo principal libre, en el hilo GTK main loop.
+		// NO vía g_idle (F6): corría antes del latch y reaparecía el deadlock.
+		GlibContext.runOnMain(GlibContext::commitPendingNightMode);
 	}
 
 	@Keep
