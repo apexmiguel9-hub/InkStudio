@@ -37,11 +37,21 @@
         android:usesCleartextTraffic="true"
         tools:targetApi="31">
 
+        <!-- GTK Android: nombre de la librería nativa que contiene main() -->
+        <meta-data
+            android:name="gtk.android.lib_name"
+            android:value="inkscape" />
+
+        <!-- GTK Android ToplevelActivity: launcher del flujo oficial GTK.
+             Patrón: build-aux/android/*.xml de gtk-android-builder (manifest.xsl):
+             - exported=true + intent-filter MAIN/LAUNCHER en ToplevelActivity
+             - gdk_android_runtime.c lanza ventanas GTK sobre esta Activity -->
         <activity
-            android:name=".MainActivity"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode"
+            android:name="org.gtk.android.ToplevelActivity"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density|uiMode|touchscreen"
+            android:enableOnBackInvokedCallback="true"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="standard"
             android:resizeableActivity="true"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

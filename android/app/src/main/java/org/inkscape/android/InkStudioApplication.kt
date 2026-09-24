@@ -3,57 +3,28 @@ package org.inkscape.android
 import android.app.Application
 import android.content.Context
 import android.util.Log
+import org.gtk.android.RuntimeApplication
 
-class InkStudioApplication : Application() {
+/**
+ * Application class que usa el flujo oficial de GTK para Android.
+ * Extiende RuntimeApplication que:
+ * - Carga libgtk-4.so en bloque estático
+ * - En onCreate() escribe recursos del sistema y llama startRuntime("inkscape")
+ * - startRuntime() corre en hilo GTK y llama al main() nativo de libinkscape.so
+ */
+class InkStudioApplication : RuntimeApplication() {
 
     companion object {
         private const val TAG = "InkStudio"
-        @Volatile private var sNativeLoaded = false
-
-        fun isNativeLoaded(): Boolean = sNativeLoaded
     }
 
     override fun onCreate() {
         super.onCreate()
-        // Cargar librerías nativas en orden de dependencias
-        loadNativeLibraries()
-    }
-
-    private fun loadNativeLibraries() {
-        if (sNativeLoaded) return
-
-        // SOLO libs que EXISTEN como .so en jniLibs/
-        // El resto (cairo, pango, glib, harfbuzz, freetype, etc.) se linkean ESTÁTICAMENTE
-        // dentro de libgtk-4.so (28MB) y libinkscape.so
-        val libs = listOf(
-            "gtk-4",               // libgtk-4.so (shared, 28MB) - DEBE estar
-            "inkscape",            // libinkscape.so (nuestra lib principal)
-            "inkview",             // libinkview.so
-            "inkscape_base",       // libinkscape_base.so
-            "2geom",               // lib2geom.so
-            "depixelize",          // libdepixelize.so
-            "avoid",               // libavoid.so
-            "cola",                // libcola.so
-            "vpsc",                // libvpsc.so
-            "croco",               // libcroco.so
-            "uemf",                // libuemf.so
-            "xslt",                // libxslt.so
-            "boost_stacktrace_basic", // libboost_stacktrace_basic.so
-            "inkscape_jni",        // libinkscape_jni.so (JNI bridge construido por CMake)
-        )
-
-        var loaded = 0
-        for (lib in libs) {
-            try {
-                System.loadLibrary(lib)
-                Log.d(TAG, "Loaded: $lib")
-                loaded++
-            } catch (e: UnsatisfiedLinkError) {
-                Log.w(TAG, "Lib not found (linked statically or missing): $lib")
-            }
-        }
-
-        sNativeLoaded = true
-        Log.i(TAG, "Native libraries loaded: $loaded/${libs.size}")
+        // RuntimeApplication.onCreate() ya hace TODO el flujo oficial GTK Android:
+        //   1. SystemFilesystem.writeResources(this) -> copia assets a filesDir
+        //   2. startRuntime("inkscape") -> hilo GTK -> main() real de libinkscape.so
+        // GTK Android runtime (gdk_android_runtime.c) ya configura HOME/XDG
+        // vía g_set_user_dirs() desde getFilesDir(). No hardcodear rutas.
+        Log.i(TAG, "Inkscape GTK runtime iniciado (flujo oficial)")
     }
 }

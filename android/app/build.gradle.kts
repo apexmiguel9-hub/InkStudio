@@ -19,14 +19,6 @@ android {
         ndk {
             abiFilters.add("arm64-v8a")
         }
-
-        // Habilitar C++17 para JNI bridge
-        externalNativeBuild {
-            cmake {
-                cppFlags.add("-std=c++17")
-                arguments.add("-DANDROID_STL=c++_static")
-            }
-        }
     }
 
     // NDK: SOLO via ndk.dir en local.properties (Gradle prohíbe ndkPath + ndk.dir juntos)
@@ -58,14 +50,6 @@ android {
         debug {
             isDebuggable = true
             isMinifyEnabled = false
-        }
-    }
-
-    // Configuración de CMake para JNI bridge
-    externalNativeBuild {
-        cmake {
-            path("src/main/cpp/CMakeLists.txt")
-            // versión definida en CMakeLists.txt: cmake_minimum_required(VERSION 3.22.1)
         }
     }
 
