@@ -111,7 +111,6 @@ public class ToplevelActivity extends Activity {
 			@GlibContext.GtkThread
 			public Surface(long identifier) {
 				super(ToplevelActivity.this);
-				android.util.Log.i("PRESENT", "PRESENT-025 " + Thread.currentThread().getName() + " Surface ctor enter " + Long.toHexString(identifier));
 				setVisibility(GONE);
 
 				try {
@@ -121,7 +120,6 @@ public class ToplevelActivity extends Activity {
 					logger.log(Level.WARNING, err.getMessage());
 					drop();
 				}
-				android.util.Log.i("PRESENT", "PRESENT-026 " + Thread.currentThread().getName() + " Surface ctor bindNative done");
 
 				setZOrderOnTop(true);
 				getHolder().setFormat(PixelFormat.RGBA_8888);
@@ -155,11 +153,7 @@ public class ToplevelActivity extends Activity {
 			}
 
 			public void setVisibility(boolean visible) {
-				android.util.Log.i("PRESENT", "PRESENT-030 " + Thread.currentThread().getName() + " Surface.setVisibility enter visible=" + visible);
-				runOnUiThread(() -> {
-					android.util.Log.i("PRESENT", "PRESENT-031 " + Thread.currentThread().getName() + " Surface.setVisibility runnable (UI) visible=" + visible);
-					super.setVisibility(visible ? VISIBLE : GONE);
-				});
+				runOnUiThread(() -> super.setVisibility(visible ? VISIBLE : GONE));
 			}
 
 			public void setInputRegion(@Nullable RectF[] region) {
@@ -292,7 +286,6 @@ public class ToplevelActivity extends Activity {
 
 			@Override
 			protected void onAttachedToWindow() {
-				android.util.Log.i("PRESENT", "PRESENT-045 " + Thread.currentThread().getName() + " SurfaceView.onAttachedToWindow (UI)");
 				super.onAttachedToWindow();
 				GlibContext.runOnMain(this::notifyAttached);
 			}
@@ -315,13 +308,11 @@ public class ToplevelActivity extends Activity {
 
 			@Override
 			public void surfaceCreated(@NonNull SurfaceHolder holder) {
-				android.util.Log.i("PRESENT", "PRESENT-040 " + Thread.currentThread().getName() + " surfaceCreated (UI)");
 				notifyVisibility(true);
 			}
 
 			@Override
 			public void surfaceChanged(@NonNull SurfaceHolder holder, int format, int width, int height) {
-				android.util.Log.i("PRESENT", "PRESENT-041 " + Thread.currentThread().getName() + " surfaceChanged (UI) w=" + width + " h=" + height);
 				float scale = Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ?
 						ToplevelActivity.this.getWindowManager().getCurrentWindowMetrics().getDensity() :
 						getResources().getDisplayMetrics().density;
@@ -331,7 +322,6 @@ public class ToplevelActivity extends Activity {
 
 			@Override
 			public void surfaceDestroyed(@NonNull SurfaceHolder holder) {
-				android.util.Log.i("PRESENT", "PRESENT-042 " + Thread.currentThread().getName() + " surfaceDestroyed (UI)");
 				notifyVisibility(false);
 			}
 		}
@@ -435,26 +425,6 @@ public class ToplevelActivity extends Activity {
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
-		android.util.Log.i("PRESENT", "PRESENT-010 " + Thread.currentThread().getName() + " onCreate enter");
-		android.util.Log.i("PRESENT", "WATCHDOG armado (dump de stacks a los 4s y 10s; diagnostico, no cambia comportamiento)");
-		Thread watchdog = new Thread(() -> {
-			try { Thread.sleep(4000); } catch (InterruptedException e) { return; }
-			for (int round = 0; round < 2; round++) {
-				String mark = round == 0 ? "WATCHDOG-4s" : "WATCHDOG-10s";
-				android.util.Log.i("PRESENT", mark + " pid=" + android.os.Process.myPid() + " dump de stacks");
-				for (java.util.Map.Entry<Thread, StackTraceElement[]> ent : Thread.getAllStackTraces().entrySet()) {
-					Thread t = ent.getKey();
-					StringBuilder sb = new StringBuilder(mark + " THREAD " + t.getName() + " id=" + t.getId() + " state=" + t.getState());
-					for (StackTraceElement el : ent.getValue())
-						sb.append("\n").append(mark + "   at ").append(el);
-					android.util.Log.i("PRESENT", sb.toString());
-				}
-				if (round == 0) { try { Thread.sleep(6000); } catch (InterruptedException e) { return; } }
-			}
-		});
-		watchdog.setName("PRESENT-Watchdog");
-		watchdog.setDaemon(true);
-		watchdog.start();
 		this.fullscreenState = false;
 
 		super.onCreate(savedInstanceState);
@@ -463,7 +433,6 @@ public class ToplevelActivity extends Activity {
 
 		this.view = new ToplevelView();
 		setContentView(this.view);
-		android.util.Log.i("PRESENT", "PRESENT-011 " + Thread.currentThread().getName() + " onCreate setContentView done");
 
 		long identifier = getIntent().getLongExtra(toplevelIdentifierKey, 0);
 		GlibContext.blockForMain(() -> {
@@ -486,19 +455,16 @@ public class ToplevelActivity extends Activity {
 					Logger.getLogger("Toplevel").log(Level.SEVERE, "Call to activate did not spawn a new window");
 			}
 		});
-		android.util.Log.i("PRESENT", "PRESENT-012 " + Thread.currentThread().getName() + " onCreate blockForMain returned");
+		android.util.Log.i("F6", "F6-ONCREATE-RELEASED " + Thread.currentThread().getName() + " blockForMain devolvio: CountDownLatch liberado, onCreate continua");
 	}
 
 	@Keep
 	@GlibContext.GtkThread
 	private void attachToplevelSurface() {
-		android.util.Log.i("PRESENT", "PRESENT-020 " + Thread.currentThread().getName() + " attachToplevelSurface enter");
 		if (this.view.toplevel != null)
 			this.view.toplevel.drop();
 		this.view.toplevel = this.view.new Surface(this.nativeIdentifier);
-		android.util.Log.i("PRESENT", "PRESENT-021 " + Thread.currentThread().getName() + " attachToplevelSurface Surface constructed");
 		runOnUiThread(() -> {
-			android.util.Log.i("PRESENT", "PRESENT-022 " + Thread.currentThread().getName() + " attachToplevelSurface addView runnable (UI)");
 			this.view.addView(this.view.toplevel, this.view.new LayoutParams(
 					0, 0,
 					ViewGroup.LayoutParams.MATCH_PARENT,
@@ -509,13 +475,9 @@ public class ToplevelActivity extends Activity {
 	}
 
 	private void updateToplevelState() {
-		android.util.Log.i("PRESENT", "PRESENT-061 " + Thread.currentThread().getName() + " updateToplevelState enter");
 		boolean has_focus = hasWindowFocus();
 		boolean is_fullscreen = this.fullscreenState;
-		GlibContext.runOnMain(() -> {
-			android.util.Log.i("PRESENT", "PRESENT-062 " + Thread.currentThread().getName() + " updateToplevelState runOnMain runnable");
-			notifyStateChange(has_focus, is_fullscreen);
-		});
+		GlibContext.runOnMain(() -> notifyStateChange(has_focus, is_fullscreen));
 	}
 
 	@Override
@@ -531,7 +493,6 @@ public class ToplevelActivity extends Activity {
 
 	@Override
 	public void onWindowFocusChanged(boolean hasFocus) {
-		android.util.Log.i("PRESENT", "PRESENT-060 " + Thread.currentThread().getName() + " onWindowFocusChanged hasFocus=" + hasFocus);
 		super.onWindowFocusChanged(hasFocus);
 		updateToplevelState();
 	}
@@ -563,9 +524,7 @@ public class ToplevelActivity extends Activity {
 	}
 
 	public void postWindowConfiguration(int color, boolean fullscreen) {
-		android.util.Log.i("PRESENT", "PRESENT-050 " + Thread.currentThread().getName() + " postWindowConfiguration enter color=0x" + Integer.toHexString(color) + " fullscreen=" + fullscreen);
 		runOnUiThread(() -> {
-			android.util.Log.i("PRESENT", "PRESENT-051 " + Thread.currentThread().getName() + " postWindowConfiguration runnable (UI)");
 			Window window = getWindow();
 			WindowInsetsController controller = window.getInsetsController();
 
@@ -589,7 +548,6 @@ public class ToplevelActivity extends Activity {
 			}
 			updateToplevelState();
 		});
-		android.util.Log.i("PRESENT", "PRESENT-052 " + Thread.currentThread().getName() + " postWindowConfiguration exit");
 	}
 
 	public void postTitle(String title) {

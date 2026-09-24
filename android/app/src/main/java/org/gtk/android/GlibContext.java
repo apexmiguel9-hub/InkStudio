@@ -41,11 +41,8 @@ public final class GlibContext {
 	public static <T> T blockForMain(Supplier<T> runnable) {
 		CountDownLatch barrier = new CountDownLatch(1);
 		AtomicReference<T> retval = new AtomicReference<>();
-		android.util.Log.i("PRESENT", "PRESENT-001 " + Thread.currentThread().getName() + " blockForMain enter");
 		runOnMain(() -> {
-			android.util.Log.i("PRESENT", "PRESENT-002 " + Thread.currentThread().getName() + " runnable runs (GTK side), executing");
 			retval.set(runnable.get());
-			android.util.Log.i("PRESENT", "PRESENT-003 " + Thread.currentThread().getName() + " runnable done, countDown");
 			barrier.countDown();
 		});
 		try {
@@ -54,7 +51,6 @@ public final class GlibContext {
 			// I don't think this can ever be thrown.
 			throw new RuntimeException(e);
 		}
-		android.util.Log.i("PRESENT", "PRESENT-004 " + Thread.currentThread().getName() + " blockForMain released");
 		return retval.get();
 	}
 
