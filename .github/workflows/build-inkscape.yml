@@ -254,9 +254,33 @@ jobs:
           sed -i 's|cache_size.x() / _cache->get_device_scale()|cache_size.x() / _scale|' src/display/control/canvas-item-ctrl.cpp
           sed -i 's|cache_size.y() / _cache->get_device_scale()|cache_size.y() / _scale|' src/display/control/canvas-item-ctrl.cpp
           # 2) pattern-editor.cpp: get_device_scale
-          sed -i '/if (!item->pix || tile_size != item->pix->get_width() || scale != item->pix->get_device_scale())/i\        double _pix_scale; cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(item->pix->cobj()), \&_pix_scale, \&_pix_scale);' \
-            src/ui/widget/pattern-editor.cpp
-          sed -i 's|scale != item->pix->get_device_scale()|scale != _pix_scale|' src/ui/widget/pattern-editor.cpp
+          # FASE9-FIX: la C API no cabe inline en la condicion (out-params) y sacarla
+          # rompe el cortocircuito '!item->pix || ...' del upstream: se dereferencia
+          # item->pix->cobj() SIEMPRE => SIGSEGV con pix==nullptr al abrir el editor
+          # desde plantilla (crash #1 del FASE8). Se reescribe el bloque preservando
+          # la semantica exacta: regenerar si (!pix || width!=tile || scale!=devscale).
+          python3 - <<'PYEOF'
+import sys
+p = "src/ui/widget/pattern-editor.cpp"
+s = open(p).read()
+old = '''        if (!item->pix || tile_size != item->pix->get_width() || scale != item->pix->get_device_scale()) {
+            item->pix = manager.get_image(paint, tile_size, tile_size, scale);
+        }'''
+new = '''        if (!item->pix) {
+            item->pix = manager.get_image(paint, tile_size, tile_size, scale);
+        } else {
+            double _pix_scale; cairo_surface_get_device_scale(const_cast<cairo_surface_t*>(item->pix->cobj()), &_pix_scale, &_pix_scale);
+            if (tile_size != item->pix->get_width() || scale != _pix_scale) {
+                item->pix = manager.get_image(paint, tile_size, tile_size, scale);
+            }
+        }'''
+n = s.count(old)
+if n != 1:
+    print(f"ERROR: patron upstream encontrado {n} veces (esperado 1)")
+    sys.exit(1)
+open(p, "w").write(s.replace(old, new))
+print("OK: pattern-editor.cpp reescrito con cortocircuito preservado (FASE9-FIX)")
+PYEOF
           # 3) marker-combo-box.cpp: set_device_scale
           sed -i 's|surface->set_device_scale(\([^,]*\), \([^)]*\))|cairo_surface_set_device_scale(const_cast<cairo_surface_t*>(surface->cobj()), \1, \2)|g' \
             src/ui/widget/style/marker-combo-box.cpp
