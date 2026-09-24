@@ -320,6 +320,56 @@ jobs:
             || { echo "ERROR: falta el path de crash-stack.txt en inkscape.cpp"; exit 1; }
           echo "OK: crash_handler instrumentado (FASE8-DUMP -> crash-stack.txt)"
 
+      # FASE10B: autoscroll OFF en el canvas. El rubber-band (rubberband.cpp) y el
+      # select-tool llaman Canvas::enable_autoscroll() al arrastrar y, cuando el dedo
+      # emulado como ratón llega cerca del borde del lienzo, la cámara se desplazaba
+      # sola ("el select box mueve la cámara"). En el celular la navegación es con
+      # scrollbars / gestos (FASE 11), así que enable_autoscroll pasa a ser no-op.
+      - name: "Parche FASE10B — autoscroll OFF (el select box no mueve la cámara)"
+        run: |
+          set -euo pipefail
+          cd inkscape
+          python3 - <<'PYEOF'
+          import sys
+          p = "src/ui/widget/canvas.cpp"
+          s = open(p).read()
+          old = "\n".join([
+              "// Allow auto-scrolling to take place if the mouse reaches the edge.",
+              "// The effect wears off when the mouse is next released.",
+              "void Canvas::enable_autoscroll()",
+              "{",
+              "    if (d->last_mouse) {",
+              "        d->autoscroll_begin(*d->last_mouse);",
+              "    } else {",
+              "        d->autoscroll_end();",
+              "    }",
+              "}",
+          ])
+          new = "\n".join([
+              "// Allow auto-scrolling to take place if the mouse reaches the edge.",
+              "// The effect wears off when the mouse is next released.",
+              "// FASE10B-TOUCH: autoscroll DESACTIVADO (no-op intencional). Con el",
+              "// dedo emulado como raton, rubber-band/select llamaban a esta funcion",
+              "// al arrastrar y la camara se movia sola al llegar al borde del lienzo",
+              "// ('el select box mueve la camara'). En el celular la navegacion es",
+              "// via scrollbars / gestos tactiles (FASE 11). autoscroll_end() sigue",
+              "// activo para limpiar cualquier estado residual.",
+              "void Canvas::enable_autoscroll()",
+              "{",
+              "    return;",
+              "}",
+          ])
+          n = s.count(old)
+          if n != 1:
+              print("ERROR: patron enable_autoscroll encontrado {} veces (esperado 1, ¿cambió upstream?)".format(n))
+              sys.exit(1)
+          open(p, "w").write(s.replace(old, new))
+          print("OK: canvas.cpp enable_autoscroll -> no-op (FASE10B-TOUCH)")
+          PYEOF
+          grep -q 'FASE10B-TOUCH' src/ui/widget/canvas.cpp \
+            || { echo "ERROR: no quedó FASE10B-TOUCH en canvas.cpp"; exit 1; }
+          echo "OK: enable_autoscroll no-op verificado"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail
