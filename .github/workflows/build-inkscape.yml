@@ -502,6 +502,47 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      # ------------------------------------------------------------------
+      # Datos de Inkscape para el APK. El runtime GTK Android apunta
+      # XDG_DATA_DIRS a <filesDir>/share (gdk_android_runtime.c) y
+      # SystemFilesystem copia assets/ -> getFilesDir() 1:1, así que los
+      # recursos deben viajar como assets/share/inkscape/** en el APK.
+      # Se empaqueta share/* (estructura normal instalada, share/* ->
+      # share/inkscape/*) EXCLUYENDO: extensions (submodule python sin
+      # runtime), bash-completion, doc, examples, tutorials (peso muerto
+      # de runtime) y fonts (vacío real). cp -rL: dereferencia symlinks
+      # (los iconos usan symlinks).
+      # ------------------------------------------------------------------
+      - name: Empaquetar datos runtime (share -> inkscape-data/share/inkscape)
+        run: |
+          set -euo pipefail
+          SRC=inkscape/share
+          OUT="$PWD/inkscape-data/share/inkscape"
+          mkdir -p "$OUT"
+          for d in application-registry attributes branding filters icons keys \
+                   markers paint palettes screens symbols templates themes ui; do
+            if [ -d "$SRC/$d" ] && [ -n "$(ls -A "$SRC/$d" 2>/dev/null)" ]; then
+              cp -rL "$SRC/$d" "$OUT/"
+            else
+              echo "WARN: share/$d no presente, se omite"
+            fi
+          done
+          # gates: lo que abortaba + lo esencial de arranque
+          test -f "$OUT/ui/inkscape-splash.glade" \
+            || { echo "ERROR: falta ui/inkscape-splash.glade"; exit 1; }
+          test -d "$OUT/icons" || { echo "ERROR: falta icons/"; exit 1; }
+          test -d "$OUT/keys"   || { echo "ERROR: falta keys/"; exit 1; }
+          echo "OK datos: $(find "$PWD/inkscape-data" -type f | wc -l) archivos, $(du -sh "$PWD/inkscape-data" | cut -f1)"
+
+      - name: Subir datos runtime (artefacto)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inkscape-android-arm64-data
+          path: inkscape-data
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Diagnóstico (configure falló)
         if: failure() && steps.cfg.outcome == 'failure'
         run: |

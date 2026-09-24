@@ -75,6 +75,44 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       # ---------------------------------------------------------
+      # 2b. Descargar DATOS de Inkscape (artefacto de build-inkscape)
+      # -> src/main/assets/share/inkscape/** (SystemFilesystem los copia a
+      # filesDir/share/inkscape/** = XDG_DATA_DIRS) + fingerprint afpr
+      # (OBLIGATORIO: sin assets/afpr writeResources NO copia nada).
+      # El MISMO source_run_id que los binarios: mismo checkout del build.
+      # ---------------------------------------------------------
+      - name: Download Inkscape data artifact
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ steps.resolve-run.outputs.source_run_id }}"
+          ASSETS="$GITHUB_WORKSPACE/android/app/src/main/assets"
+          mkdir -p "$ASSETS"
+          ARTIFACT_ID=$(gh api repos/apexmiguel9-hub/InkStudio/actions/runs/$RUN_ID/artifacts \
+            --jq '.artifacts[] | select(.name=="inkscape-android-arm64-data") | .id')
+          [ -z "$ARTIFACT_ID" ] && { echo "ERROR: artefacto data no encontrado"; exit 1; }
+          gh api repos/apexmiguel9-hub/InkStudio/actions/artifacts/$ARTIFACT_ID/zip \
+            > "$RUNNER_TEMP/inkscape-data.zip"
+          unzip -o "$RUNNER_TEMP/inkscape-data.zip" -d "$RUNNER_TEMP"
+          # upload-artifact v4 quita el directorio raíz común => el zip puede
+          # traer share/inkscape/** plano o con prefijo inkscape-data/. Se
+          # localiza el glade real y la raíz share/ se calcula a partir de él
+          # (3 dirname: .../share/inkscape/ui/inkscape-splash.glade -> .../share).
+          SPLASH=$(find "$RUNNER_TEMP" -path '*/share/inkscape/ui/inkscape-splash.glade' | head -1)
+          [ -n "$SPLASH" ] \
+            || { echo "ERROR: estructura share/inkscape no encontrada en el artefacto"; exit 1; }
+          SHARE_DIR=$(dirname "$(dirname "$(dirname "$SPLASH")")")
+          cp -r "$SHARE_DIR" "$ASSETS/"
+          # afpr = sha512 (128 hex) del árbol: cambia con los datos => recopia
+          ( cd "$ASSETS" && find share -type f -print0 | sort -z \
+              | xargs -0 sha512sum | sha512sum | cut -c1-128 ) > "$ASSETS/afpr"
+          test -s "$ASSETS/afpr"
+          test -f "$ASSETS/share/inkscape/ui/inkscape-splash.glade" \
+            || { echo "ERROR: splash glade no llegó a assets"; exit 1; }
+          echo "OK assets: $(find "$ASSETS" -type f | wc -l) archivos, $(du -sh "$ASSETS" | cut -f1)"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      # ---------------------------------------------------------
       # 3. Clonar dependencias + copiar .so Y headers (ROBUSTO)
       # ---------------------------------------------------------
       - name: Clone dependency libs & copy .so + headers
@@ -342,6 +380,13 @@ jobs:
           fi
           echo "APK encontrado: $APK ($(stat -c%s "$APK") bytes)"
           unzip -l "$APK" | grep -E '\.so$' | head -20
+          # FASE 4: los datos de Inkscape deben estar dentro del APK
+          unzip -l "$APK" | grep -q 'assets/share/inkscape/ui/inkscape-splash.glade' \
+            || { echo "ERROR: los datos no llegaron al APK (assets sin splash glade)"; exit 1; }
+          unzip -l "$APK" | grep -q 'assets/afpr' \
+            || { echo "ERROR: faltó el fingerprint afpr en assets del APK"; exit 1; }
+          echo "OK: assets/share/inkscape/** + afpr presentes en el APK"
+          unzip -l "$APK" | grep -cE 'assets/share/inkscape/' | sed 's/^/  ficheros de datos en APK: /'
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
