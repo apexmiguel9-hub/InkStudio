@@ -19,12 +19,14 @@
 
 package org.gtk.android;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.ActivityManager;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.Insets;
@@ -33,6 +35,8 @@ import android.graphics.RectF;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
+import android.provider.Settings;
 import android.text.InputType;
 import android.view.DragEvent;
 import android.view.KeyEvent;
@@ -54,7 +58,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.UiThread;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -465,6 +471,54 @@ public class ToplevelActivity extends Activity {
 		// el latch liberado y el hilo principal libre, en el hilo GTK main loop.
 		// NO vía g_idle (F6): corría antes del latch y reaparecía el deadlock.
 		GlibContext.runOnMain(GlibContext::commitPendingNightMode);
+		// FASE 10E: permiso de almacenamiento para Save/Export/Import. Con
+		// targetSdk 34 en Android 11+ (API 30+) la escritura en rutas externas
+		// arbitrarias requiere MANAGE_EXTERNAL_STORAGE ("Todos los archivos"),
+		// concedido por el usuario en Ajustes. Se lanza el intent al arranque
+		// hasta que esté concedido.
+		new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(this::requestStorageAccess, 800);
+	}
+
+	private static final int REQUEST_STORAGE_CODE = 1001;
+
+	private void requestStorageAccess() {
+		if (Build.VERSION.SDK_INT >= 30) {
+			if (!Environment.isExternalStorageManager()) {
+				try {
+					Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+							Uri.parse("package:" + getPackageName()));
+					startActivity(intent);
+				} catch (Exception ignored) {
+					try {
+						startActivity(new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION));
+					} catch (Exception ignored2) {
+						// sin opción de gestión en este sistema: ignorar
+					}
+				}
+			}
+		} else if (Build.VERSION.SDK_INT >= 23) {
+			if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+					!= PackageManager.PERMISSION_GRANTED) {
+				requestPermissions(new String[]{
+						Manifest.permission.WRITE_EXTERNAL_STORAGE,
+						Manifest.permission.READ_EXTERNAL_STORAGE}, REQUEST_STORAGE_CODE);
+			}
+		}
+		if (Build.VERSION.SDK_INT >= 33) {
+			List<String> media = new ArrayList<>();
+			String[] mediaPerms = {
+					Manifest.permission.READ_MEDIA_IMAGES,
+					Manifest.permission.READ_MEDIA_VIDEO,
+					Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED};
+			for (String p : mediaPerms) {
+				if (checkSelfPermission(p) != PackageManager.PERMISSION_GRANTED) {
+					media.add(p);
+				}
+			}
+			if (!media.isEmpty()) {
+				requestPermissions(media.toArray(new String[0]), REQUEST_STORAGE_CODE);
+			}
+		}
 	}
 
 	@Keep

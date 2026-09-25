@@ -21,6 +21,10 @@
     <!-- FASE 7: gdk_android_toplevel_focus() -> ActivityManager.moveTaskToFront()
          requiere REORDER_TASKS (protectionLevel normal: se concede en install). -->
     <uses-permission android:name="android.permission.REORDER_TASKS" />
+    <!-- FASE 10E: acceso completo a almacenamiento externo. En Android 11+ el
+         Save/Export/Import de Inkscape escribe en rutas arbitrarias (Documents,
+         Downloads...), lo que requiere MANAGE_EXTERNAL_STORAGE (all-files). -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- Hardware features -->
     <uses-feature android:name="android.hardware.touchscreen.multitouch" android:required="true" />
