@@ -531,20 +531,20 @@ jobs:
             std::vector<Glib::RefPtr<Gio::File>> &files,
             std::string &current_folder)
           {
-              auto const dialog = Gtk::make_managed<Gtk::FileChooserDialog>(title, parent, action);
-              dialog->set_modal(true);
+              Gtk::FileChooserDialog dialog(parent, title, action);
+              dialog.set_modal(true);
 
-              dialog->add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
-              dialog->add_button(accept_label, Gtk::ResponseType::ACCEPT);
-              dialog->set_default_response(Gtk::ResponseType::ACCEPT);
+              dialog.add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
+              dialog.add_button(accept_label, Gtk::ResponseType::ACCEPT);
+              dialog.set_default_response(Gtk::ResponseType::ACCEPT);
 
               if (filters_model && filters_model->get_n_items() > 0) {
-                  dialog->set_filters(filters_model);
-                  dialog->set_filter(filters_model->get_item(0));
+                  dialog.set_filters(filters_model);
+                  dialog.set_filter(filters_model->get_item(0));
               }
 
               if (multiple) {
-                  dialog->set_select_multiple(true);
+                  dialog.set_select_multiple(true);
               }
 
               if (current_folder.empty()) {
@@ -555,14 +555,14 @@ jobs:
               if (folder->query_file_type() != Gio::FileType::DIRECTORY) {
                   folder = Gio::File::create_for_path(Glib::get_home_dir());
               }
-              dialog->set_current_folder(folder);
+              dialog.set_current_folder(folder);
 
               if (!file_name.empty() && action == Gtk::FileChooser::Action::SAVE) {
-                  dialog->set_current_name(file_name);
+                  dialog.set_current_name(file_name);
               }
 
               bool responded = false;
-              dialog->signal_response().connect([&](int response)
+              dialog.signal_response().connect([&](int response)
               {
                   responded = true;
                   if (response != Gtk::ResponseType::ACCEPT) {
@@ -570,8 +570,8 @@ jobs:
                   }
 
                   if (multiple) {
-                      files = dialog->get_files();
-                  } else if (auto file = dialog->get_file()) {
+                      files = dialog.get_files();
+                  } else if (auto file = dialog.get_file()) {
                       files.push_back(file);
                   }
 
@@ -582,14 +582,14 @@ jobs:
                   }
               });
 
-              dialog->present();
+              dialog.present();
 
               auto const main_context = Glib::MainContext::get_default();
               while (!responded) {
                   main_context->iteration(true);
               }
 
-              dialog->hide();
+              dialog.hide();
               return files.empty() ? Glib::RefPtr<Gio::File>() : files[0];
           }
 
@@ -750,36 +750,36 @@ jobs:
           {
               // FASE10F-2-PICK: chooser clasico EN-VENTANA (sin SAF) para seleccionar la
               // carpeta del batch export. devuelve una ruta real bajo /storage/emulated/0.
-              auto dialog = Gtk::make_managed<Gtk::FileChooserDialog>(_("Select a folder for batch export"),
-                                                            dynamic_cast<Gtk::Window &>(*get_root()),
-                                                            Gtk::FileChooser::Action::SELECT_FOLDER);
-              dialog->set_modal(true);
-              dialog->add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
-              dialog->add_button(_("_Select"), Gtk::ResponseType::ACCEPT);
-              dialog->set_default_response(Gtk::ResponseType::ACCEPT);
+              Gtk::FileChooserDialog dialog(dynamic_cast<Gtk::Window &>(*get_root()),
+                                            _("Select a folder for batch export"),
+                                            Gtk::FileChooser::Action::SELECT_FOLDER);
+              dialog.set_modal(true);
+              dialog.add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
+              dialog.add_button(_("_Select"), Gtk::ResponseType::ACCEPT);
+              dialog.set_default_response(Gtk::ResponseType::ACCEPT);
 
               auto start = getBatchPath();
               if (start && (*start)->query_file_type() == Gio::FileType::DIRECTORY) {
-                  dialog->set_current_folder(*start);
+                  dialog.set_current_folder(*start);
               }
 
               bool responded = false;
-              dialog->signal_response().connect([&](int response)
+              dialog.signal_response().connect([&](int response)
               {
                   responded = true;
                   if (response == Gtk::ResponseType::ACCEPT) {
-                      if (auto folder = dialog->get_file()) {
+                      if (auto folder = dialog.get_file()) {
                           setBatchPath(folder);
                       }
                   }
               });
-              dialog->present();
+              dialog.present();
 
               auto const main_context = Glib::MainContext::get_default();
               while (!responded) {
                   main_context->iteration(true);
               }
-              dialog->hide();
+              dialog.hide();
           }"""
           s2 = s2.replace(old_pick, new_pick)
           open(p2, "w").write(s2)
