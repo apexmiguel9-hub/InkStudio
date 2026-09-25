@@ -507,13 +507,46 @@ jobs:
           #include <glibmm/main.h>
           #include <glibmm/miscutils.h>
           #include <gtkmm/filechooserdialog.h>
+          #include <gtkmm/filedialog.h>
 
           #include "choose-file-utils.h"
           #include "preferences.h"
 
           namespace Inkscape {
 
-          // FASE10F-2: en Android no usamos Gtk::FileDialog (y por tanto tampoco el picker
+          // Funciones públicas de la API original (choose-file.h). Se mantienen
+          // verbatim: operan sobre Gtk::FileDialog estándar (sin SAF) y las usa
+          // parameter-path.cpp. Sin ellas libinkscape_base.so no resuelve
+          // Inkscape::create_file_dialog al dlopen => UnsatisfiedLinkError al
+          // arrancar (crash-loop).
+
+          Glib::RefPtr<Gtk::FileDialog> create_file_dialog(Glib::ustring const &title,
+                                                           Glib::ustring const &accept_label)
+          {
+              auto const file_dialog = Gtk::FileDialog::create();
+              file_dialog->set_title(title);
+              file_dialog->set_accept_label(accept_label);
+              return file_dialog;
+          }
+
+          void set_filters(Gtk::FileDialog &file_dialog,
+                           Glib::RefPtr<Gio::ListStore<Gtk::FileFilter>> const &filters)
+          {
+              file_dialog.set_filters(filters);
+              if (filters->get_n_items() > 0) {
+                  file_dialog.set_default_filter(filters->get_item(0));
+              }
+          }
+
+          void set_filter(Gtk::FileDialog &file_dialog, Glib::RefPtr<Gtk::FileFilter> const &filter)
+          {
+              auto const filters = Gio::ListStore<Gtk::FileFilter>::create();
+              filters->append(filter);
+              set_filters(file_dialog, filters);
+          }
+
+          // FASE10F-2: el diálogo principal (Guardar/Abrir/Export) no usa Gtk::FileDialog;
+          // usa el chooser CLÁSICO Gtk::FileChooserDialog para evitar el picker
           // SAF nativo de gtkfilechoosernativeandroid.c). SAF devuelve content URIs:
           // get_path() = "/document/..." (no es una ruta real) => can_save_filename() no
           // detecta la extensión, la escritura con fopen() falla y el guardado deja el
