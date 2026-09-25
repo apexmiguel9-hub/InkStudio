@@ -475,6 +475,321 @@ jobs:
             || { echo "ERROR: faltan marcadores FASE10F-1 en inkscape-main.cpp"; exit 1; }
           echo "OK: parche FASE10F-1 verificado"
 
+      # FASE10F-2: chooser CLÁSICO en-ventana (sin picker SAF). En Android el
+      # Gtk::FileDialog usa gtkfilechoosernativeandroid.c -> SAF/documentsui, que
+      # devuelve content URIs: get_path() = "/document/..." (no es una ruta real)
+      # => can_save_filename() no detecta la extensión, la escritura con fopen()
+      # falla y el guardado deja el archivo a 0B + crashea tras guardar. El
+      # chooser clásico (Gtk::FileChooserDialog) recorre RUTAS reales: con
+      # HOME=/storage/emulated/0 (FASE10F-1) arranca en el almacén externo,
+      # sugiere el nombre con extensión (drawing.svg) y devuelve un Gio::File de
+      # ruta real => detección de extensión + fopen + stack de guardado/export OK.
+      - name: "Parche FASE10F-2 — chooser clásico (sin SAF; rutas reales)"
+        run: |
+          set -euo pipefail
+          cd inkscape
+          python3 - <<'PYEOF'
+          import sys
+
+          # 1) choose-file.cpp: reescritura completa -> Gtk::FileChooserDialog.
+          p = "src/ui/dialog/choose-file.cpp"
+          s = open(p).read()
+          if "choose_file_open_images" not in s or "namespace Inkscape" not in s:
+              print("ERROR: choose-file.cpp inesperado (¿cambió upstream?)")
+              sys.exit(1)
+
+          new_cpp = '''// SPDX-License-Identifier: GPL-2.0-or-later
+
+          #include "choose-file.h"
+
+          #include <giomm/liststore.h>
+          #include <glib/gi18n.h>
+          #include <glibmm/main.h>
+          #include <glibmm/miscutils.h>
+          #include <gtkmm/filechooserdialog.h>
+
+          #include "choose-file-utils.h"
+          #include "preferences.h"
+
+          namespace Inkscape {
+
+          // FASE10F-2: en Android no usamos Gtk::FileDialog (y por tanto tampoco el picker
+          // SAF nativo de gtkfilechoosernativeandroid.c). SAF devuelve content URIs:
+          // get_path() = "/document/..." (no es una ruta real) => can_save_filename() no
+          // detecta la extensión, la escritura con fopen() falla y el guardado deja el
+          // archivo a 0B + crashea después. El chooser CLÁSICO (Gtk::FileChooserDialog)
+          // es un widget EN-VENTANA que recorre rutas reales: con HOME=/storage/emulated/0
+          // (FASE10F-1) arranca en el almacén externo y devuelve un Gio::File de ruta
+          // real => detección de extensión, fopen() y todo el stack de guardado/export
+          // funcionan sin más cambios.
+
+          [[nodiscard]] static Glib::RefPtr<Gio::File>
+          run_chooser(Glib::ustring const &title, Gtk::Window &parent,
+            Gtk::FileChooser::Action action, Glib::ustring const &accept_label,
+            Glib::RefPtr<Gio::ListStore<Gtk::FileFilter>> const &filters_model,
+            std::string const &file_name, bool multiple,
+            std::vector<Glib::RefPtr<Gio::File>> &files,
+            std::string &current_folder)
+          {
+              auto const dialog = Gtk::make_managed<Gtk::FileChooserDialog>(title, parent, action);
+              dialog->set_modal(true);
+
+              dialog->add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
+              dialog->add_button(accept_label, Gtk::ResponseType::ACCEPT);
+              dialog->set_default_response(Gtk::ResponseType::ACCEPT);
+
+              if (filters_model && filters_model->get_n_items() > 0) {
+                  dialog->set_filters(filters_model);
+                  dialog->set_filter(filters_model->get_item(0));
+              }
+
+              if (multiple) {
+                  dialog->set_select_multiple(true);
+              }
+
+              if (current_folder.empty()) {
+                  current_folder = Glib::get_home_dir();
+              }
+
+              auto folder = Gio::File::create_for_path(current_folder);
+              if (folder->query_file_type() != Gio::FileType::DIRECTORY) {
+                  folder = Gio::File::create_for_path(Glib::get_home_dir());
+              }
+              dialog->set_current_folder(folder);
+
+              if (!file_name.empty() && action == Gtk::FileChooser::Action::SAVE) {
+                  dialog->set_current_name(file_name);
+              }
+
+              bool responded = false;
+              dialog->signal_response().connect([&](int response)
+              {
+                  responded = true;
+                  if (response != Gtk::ResponseType::ACCEPT) {
+                      return;
+                  }
+
+                  if (multiple) {
+                      files = dialog->get_files();
+                  } else if (auto file = dialog->get_file()) {
+                      files.push_back(file);
+                  }
+
+                  if (!files.empty()) {
+                      if (auto parent_folder = files[0]->get_parent()) {
+                          current_folder = parent_folder->get_path();
+                      }
+                  }
+              });
+
+              dialog->present();
+
+              auto const main_context = Glib::MainContext::get_default();
+              while (!responded) {
+                  main_context->iteration(true);
+              }
+
+              dialog->hide();
+              return files.empty() ? Glib::RefPtr<Gio::File>() : files[0];
+          }
+
+          // ---- save ----------------------------------------------------------------
+
+          Glib::RefPtr<Gio::File> choose_file_save(Glib::ustring const &title, Gtk::Window *parent,
+                                         Glib::RefPtr<Gio::ListStore<Gtk::FileFilter>> const &filters_model,
+                                         std::string const &file_name,
+                                         std::string &current_folder)
+          {
+              if (!parent) return {};
+
+              std::vector<Glib::RefPtr<Gio::File>> files;
+              run_chooser(title, *parent, Gtk::FileChooser::Action::SAVE, _("Save"),
+                filters_model, file_name, false, files, current_folder);
+              return files.empty() ? Glib::RefPtr<Gio::File>() : files[0];
+          }
+
+          Glib::RefPtr<Gio::File> choose_file_save(Glib::ustring const &title, Gtk::Window *parent,
+                                         Glib::ustring const &mime_type,
+                                         std::string const &file_name,
+                                         std::string &current_folder)
+          {
+              // FASE10F-2: también arreglamos el shadowing de upstream que dejaba la lista
+              // de filtros VACÍA cuando llegaba un mime_type (p.ej. guardar paletas).
+              if (!parent) return {};
+
+              auto filters_model = Gio::ListStore<Gtk::FileFilter>::create();
+              if (!mime_type.empty()) {
+                  auto filter = Gtk::FileFilter::create();
+                  filter->add_mime_type(mime_type);
+                  filters_model->append(filter);
+              }
+
+              return choose_file_save(title, parent, filters_model, file_name, current_folder);
+          }
+
+          // ---- open ----------------------------------------------------------------
+
+          Glib::RefPtr<Gio::File> choose_file_open(Glib::ustring const &title, Gtk::Window *parent,
+                                         Glib::RefPtr<Gio::ListStore<Gtk::FileFilter>> const &filters_model,
+                                         std::string &current_folder,
+                                         Glib::ustring const &accept)
+          {
+              if (!parent) return Glib::RefPtr<Gio::File>();
+
+              std::vector<Glib::RefPtr<Gio::File>> files;
+              run_chooser(title, *parent, Gtk::FileChooser::Action::OPEN, accept.empty() ? _("Open") : accept,
+                filters_model, "", false, files, current_folder);
+              return files.empty() ? Glib::RefPtr<Gio::File>() : files[0];
+          }
+
+          Glib::RefPtr<Gio::File> choose_file_open(Glib::ustring const &title, Gtk::Window *parent,
+                                         std::vector<Glib::ustring> const &mime_types,
+                                         std::string &current_folder,
+                                         Glib::ustring const &accept)
+          {
+              auto filters_model = Gio::ListStore<Gtk::FileFilter>::create();
+              auto filter = Gtk::FileFilter::create();
+              for (auto const &t : mime_types) {
+                  filter->add_mime_type(t);
+              }
+              filters_model->append(filter);
+
+              return choose_file_open(title, parent, filters_model, current_folder, accept);
+          }
+
+          Glib::RefPtr<Gio::File> choose_file_open(Glib::ustring const &title, Gtk::Window *parent,
+                                         std::vector<std::pair<Glib::ustring, Glib::ustring>> const &filters,
+                                         std::string &current_folder,
+                                         Glib::ustring const &accept)
+          {
+              auto filters_model = Gio::ListStore<Gtk::FileFilter>::create();
+
+              auto all_supported = Gtk::FileFilter::create();
+              if (filters.size() > 1) {
+                  all_supported->set_name(_("All Supported Formats"));
+                  filters_model->append(all_supported);
+              }
+
+              for (auto const &f : filters) {
+                  auto filter = Gtk::FileFilter::create();
+                  filter->set_name(f.first);
+                  filter->add_pattern(f.second);
+                  filters_model->append(filter);
+                  all_supported->add_pattern(f.second);
+              }
+
+              return choose_file_open(title, parent, filters_model, current_folder, accept);
+          }
+
+          // Open one or more image files.
+          std::vector<Glib::RefPtr<Gio::File>> choose_file_open_images(Glib::ustring const &title,
+                                                             Gtk::Window* parent,
+                                                             std::string const &pref_path,
+                                                             Glib::ustring const &accept)
+          {
+              if (!parent) return {};
+
+              std::vector<Glib::RefPtr<Gio::File>> files;
+
+              std::string current_folder;
+              Inkscape::UI::Dialog::get_start_directory(current_folder, pref_path, true);
+              if (current_folder.empty()) {
+                  current_folder = Glib::get_home_dir();
+              }
+
+              auto const filter_model = Inkscape::UI::Dialog::create_open_filters();
+              run_chooser(title, *parent, Gtk::FileChooser::Action::OPEN, accept.empty() ? _("Open") : accept,
+                filter_model, "", true, files, current_folder);
+
+              if (files.size() == 1) {
+                  // Save current_folder.
+                  Inkscape::Preferences *prefs = Inkscape::Preferences::get();
+                  prefs->setString(pref_path, current_folder);
+              }
+
+              return files;
+          }
+
+          } // namespace Inkscape
+          '''
+          open(p, "w").write(new_cpp)
+          if new_cpp.count("FASE10F-2") < 2:
+              print("ERROR: marcadores FASE10F-2 ausentes en el nuevo choose-file.cpp")
+              sys.exit(1)
+
+          # 2) export-batch.cpp: pickBatchPath -> SELECT_FOLDER clásico (sin SAF).
+          p2 = "src/ui/dialog/export-batch.cpp"
+          s2 = open(p2).read()
+
+          old_inc = "#include <gtkmm/filedialog.h>"
+          n_inc = s2.count(old_inc)
+          if n_inc != 1:
+              print("ERROR: include filedialog en export-batch encontrado {} veces (esperado 1)".format(n_inc))
+              sys.exit(1)
+          s2 = s2.replace(old_inc, "#include <gtkmm/filechooserdialog.h>")
+
+          old_pick = """void BatchExport::pickBatchPath()
+          {
+              auto dialog = Gtk::FileDialog::create();
+              dialog->select_folder(dynamic_cast<Gtk::Window &>(*get_root()), sigc::track_object([&dialog = *dialog, this] (auto &result) {
+                  try {
+                      if (auto old_file = dialog.select_folder_finish(result)) {
+                          setBatchPath(old_file);
+                          return;
+                      }
+                  } catch (Gtk::DialogError const &) {
+                  }
+              }, *this), {});
+          }"""
+          n_pick = s2.count(old_pick)
+          if n_pick != 1:
+              print("ERROR: pickBatchPath SAF encontrado {} veces (esperado 1)".format(n_pick))
+              sys.exit(1)
+
+          new_pick = """void BatchExport::pickBatchPath()
+          {
+              // FASE10F-2-PICK: chooser clasico EN-VENTANA (sin SAF) para seleccionar la
+              // carpeta del batch export. devuelve una ruta real bajo /storage/emulated/0.
+              auto dialog = Gtk::make_managed<Gtk::FileChooserDialog>(_("Select a folder for batch export"),
+                                                            dynamic_cast<Gtk::Window &>(*get_root()),
+                                                            Gtk::FileChooser::Action::SELECT_FOLDER);
+              dialog->set_modal(true);
+              dialog->add_button(_("_Cancel"), Gtk::ResponseType::CANCEL);
+              dialog->add_button(_("_Select"), Gtk::ResponseType::ACCEPT);
+              dialog->set_default_response(Gtk::ResponseType::ACCEPT);
+
+              auto start = getBatchPath();
+              if (start && (*start)->query_file_type() == Gio::FileType::DIRECTORY) {
+                  dialog->set_current_folder(*start);
+              }
+
+              bool responded = false;
+              dialog->signal_response().connect([&](int response)
+              {
+                  responded = true;
+                  if (response == Gtk::ResponseType::ACCEPT) {
+                      if (auto folder = dialog->get_file()) {
+                          setBatchPath(folder);
+                      }
+                  }
+              });
+              dialog->present();
+
+              auto const main_context = Glib::MainContext::get_default();
+              while (!responded) {
+                  main_context->iteration(true);
+              }
+              dialog->hide();
+          }"""
+          s2 = s2.replace(old_pick, new_pick)
+          open(p2, "w").write(s2)
+          print("OK: choose-file.cpp -> chooser clasico; export-batch pickBatchPath -> SELECT_FOLDER clasico")
+          PYEOF
+          grep -q 'FASE10F-2' src/ui/dialog/choose-file.cpp \
+            && grep -q 'FASE10F-2-PICK' src/ui/dialog/export-batch.cpp \
+            || { echo "ERROR: faltan marcadores FASE10F-2"; exit 1; }
+          echo "OK: parche FASE10F-2 verificado"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail
