@@ -102,6 +102,25 @@ jobs:
             || { echo "ERROR: estructura share/inkscape no encontrada en el artefacto"; exit 1; }
           SHARE_DIR=$(dirname "$(dirname "$(dirname "$SPLASH")")")
           cp -r "$SHARE_DIR" "$ASSETS/"
+          # FASE10E-bis: GSettings schemas de GTK4 (XML COMMITTED en
+          # assets/share/glib-2.0/schemas; aquí se compila gschemas.compiled).
+          # Sin ellos, el diálogo de guardar/exportar
+          # (g_settings_new "org.gtk.gtk4.Settings.FileChooser" en
+          # gtkfilechooserutils.c) y el color chooser
+          # (org.gtk.gtk4.Settings.ColorChooser) abortan con
+          # g_error("No GSettings schemas are installed on the system") -> SIGABRT
+          # (el harvest .libs NO incluye share/glib-2.0/schemas). El archivo
+          # compilado viaja en assets/share/glib-2.0/schemas -> filesDir/share
+          # (XDG_DATA_DIRS) y GSettings lo encuentra automáticamente.
+          sudo apt-get install -y --no-install-recommends libglib2.0-bin >/dev/null 2>&1 || true
+          test -d "$ASSETS/share/glib-2.0/schemas" \
+            || { echo "ERROR: faltan los XML de schemas committed en assets"; exit 1; }
+          test -f "$ASSETS/share/glib-2.0/schemas/org.gtk.gtk4.Settings.FileChooser.gschema.xml" \
+            || { echo "ERROR: falta FileChooser.gschema.xml"; exit 1; }
+          glib-compile-schemas "$ASSETS/share/glib-2.0/schemas"
+          test -f "$ASSETS/share/glib-2.0/schemas/gschemas.compiled" \
+            || { echo "ERROR: no se generó gschemas.compiled"; exit 1; }
+          echo "OK schemas: $(ls "$ASSETS/share/glib-2.0/schemas" | tr '\n' ' ')"
           # afpr = sha512 (128 hex) del árbol: cambia con los datos => recopia
           ( cd "$ASSETS" && find share -type f -print0 | sort -z \
               | xargs -0 sha512sum | sha512sum | cut -c1-128 ) > "$ASSETS/afpr"
