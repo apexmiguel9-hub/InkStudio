@@ -45,6 +45,7 @@ import android.view.PointerIcon;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.Window;
 import android.view.WindowInsets;
@@ -215,6 +216,52 @@ public class ToplevelActivity extends Activity {
 					logger.log(Level.SEVERE, "Attempted to drop toplevel from view");*/
 			}
 
+			// FASE11A-APP: slop táctil — lección de Blender-Wanderson
+			// (ANDROID_AI_GUIDE.md L419: "a finger always wobbles on the way
+			// down and a wobble that counted as a drag ate the release"). Un
+			// dedo SIEMPRE genera micro-movimientos al bajar; esos ACTION_MOVE
+			// espurios llegan a GTK como drags, se comen el release y el tap no
+			// activa nada (p.ej. menús que se cierran al tocar un ítem). Se
+			// suprimen los MOVE dentro del radio del slop; el DOWN y el UP
+			// siempre pasan, y al superar el slop vuelven a pasar todos.
+			private final float[] slopDown = new float[2]; // coords del ACTION_DOWN
+			private boolean slopActive = false;            // dentro del radio del slop
+			private float touchSlopPx = -1;                // getScaledTouchSlop() perezoso
+
+			private float getTouchSlop() {
+				if (touchSlopPx < 0)
+					touchSlopPx = ViewConfiguration.get(getContext()).getScaledTouchSlop();
+				return touchSlopPx;
+			}
+
+			/** @return true para enviar el evento a GTK, false para descartarlo. */
+			private boolean touchSlopFilter(MotionEvent event) {
+				int action = event.getActionMasked();
+				if (action == MotionEvent.ACTION_DOWN) {
+					slopDown[0] = event.getX(0);
+					slopDown[1] = event.getY(0);
+					boolean finger = event.getToolType(0) == MotionEvent.TOOL_TYPE_FINGER;
+					slopActive = finger; // slop solo para el dedo, no stylus/ratón
+					return true;
+				}
+				if (action == MotionEvent.ACTION_UP ||
+						action == MotionEvent.ACTION_POINTER_DOWN ||
+						action == MotionEvent.ACTION_POINTER_UP ||
+						action == MotionEvent.ACTION_CANCEL) {
+					slopActive = false; // cambio de gesto/punteros: deja pasar todo
+					return true;
+				}
+				if (!slopActive || action != MotionEvent.ACTION_MOVE)
+					return true;
+				float dx = event.getX(0) - slopDown[0];
+				float dy = event.getY(0) - slopDown[1];
+				float slop = getTouchSlop();
+				if (dx * dx + dy * dy <= slop * slop)
+					return false; // micro-movimiento del dedo: descartar
+				slopActive = false; // se superó el slop: drag real, pasa todo
+				return true;
+			}
+
 			private boolean motionEventProxy(MotionEvent event) {
 				if (event == null)
 					return false;
@@ -246,6 +293,8 @@ public class ToplevelActivity extends Activity {
 			}
 			@Override
 			public boolean onTouchEvent(MotionEvent event) {
+				if (!touchSlopFilter(event))
+					return true;
 				return motionEventProxy(event);
 			}
 			// is there a need for onTrackballEvent?
