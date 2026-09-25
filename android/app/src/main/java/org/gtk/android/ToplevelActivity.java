@@ -38,6 +38,7 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.provider.Settings;
 import android.text.InputType;
+import android.util.Log;
 import android.view.DragEvent;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
@@ -234,6 +235,33 @@ public class ToplevelActivity extends Activity {
 				return touchSlopPx;
 			}
 
+			// FASE11A-DIAG: registro de entrada — correlacionar el comportamiento de
+			// menús y color picker con la secuencia real de eventos. Lección
+			// Blender-Wanderson (ANDROID_AI_GUIDE.md): "instrument rather than
+			// guess after the first miss: print what actually arrives".
+			private static String inputActionName(int action) {
+				switch (action) {
+					case MotionEvent.ACTION_DOWN: return "DOWN";
+					case MotionEvent.ACTION_UP: return "UP";
+					case MotionEvent.ACTION_MOVE: return "MOVE";
+					case MotionEvent.ACTION_CANCEL: return "CANCEL";
+					case MotionEvent.ACTION_POINTER_DOWN: return "P_DOWN";
+					case MotionEvent.ACTION_POINTER_UP: return "P_UP";
+					default: return "?" + action;
+				}
+			}
+
+			private void logInputDiagnostic(MotionEvent event, boolean sentToGtk) {
+				if (event == null)
+					return;
+				Log.i("INKINPUT", inputActionName(event.getActionMasked())
+						+ " idx=" + event.getActionIndex()
+						+ " pc=" + event.getPointerCount()
+						+ " x=" + (int) event.getX(0) + " y=" + (int) event.getY(0)
+						+ " tool=" + event.getToolType(0)
+						+ (sentToGtk ? " ->GTK" : " ->slop-blocked"));
+			}
+
 			/** @return true para enviar el evento a GTK, false para descartarlo. */
 			private boolean touchSlopFilter(MotionEvent event) {
 				int action = event.getActionMasked();
@@ -293,7 +321,9 @@ public class ToplevelActivity extends Activity {
 			}
 			@Override
 			public boolean onTouchEvent(MotionEvent event) {
-				if (!touchSlopFilter(event))
+				boolean pass = touchSlopFilter(event);
+				logInputDiagnostic(event, pass);
+				if (!pass)
 					return true;
 				return motionEventProxy(event);
 			}
