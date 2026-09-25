@@ -416,6 +416,65 @@ jobs:
             || { echo "ERROR: faltan marcadores FASE10D en text-tool.cpp"; exit 1; }
           echo "OK: parche FASE10D verificado"
 
+      # FASE10F-1: HOME en Android. El sistema no define HOME (no hay passwd) y
+      # g_get_home_dir() cae a "/data" -> el diálogo de guardar/abrir arranca en
+      # /data => "could not read the contents of data: permission denied" (todo
+      # el árbol a partir de la raíz es ilegible salvo /storage/emulated/0). La
+      # app SÍ tiene permiso en el almacén externo (/storage/emulated/0 ==
+      # /sdcard, vía MANAGE_EXTERNAL_STORAGE + Storage Access Framework): fijar
+      # HOME ahí hace que TODOS los defaults de los diálogos (save/open/export,
+      # get_start_directory y expansión de "~") apunten a /storage/emulated/0.
+      # Las preferencias NO se mueven: XDG_CONFIG_HOME/XDG_DATA_HOME ya los fija
+      # el runtime android a filesDir (gdkandroidruntime.c, g_set_user_dirs).
+      - name: "Parche FASE10F-1 — HOME=/storage/emulated/0 (el chooser no cae a /data)"
+        run: |
+          set -euo pipefail
+          cd inkscape
+          python3 - <<'PYEOF'
+          import sys
+          p = "src/inkscape-main.cpp"
+          s = open(p).read()
+
+          # 1) Función set_home_env() justo antes de set_themes_env().
+          old1 = "static void set_themes_env()"
+          new1 = (
+              "static void set_home_env()\n"
+              "{\n"
+              "    // FASE10F-1: Android no define HOME (no hay passwd) -> g_get_home_dir()\n"
+              "    // cae a \"/data\" y el chooser de guardar/abrir muestra \"permission denied\".\n"
+              "    // /storage/emulated/0 (== /sdcard) es el almacen externo donde la app\n"
+              "    // SI tiene permiso (MANAGE_EXTERNAL_STORAGE + Storage Access Framework).\n"
+              "    if (!g_getenv(\"HOME\")) {\n"
+              "        g_setenv(\"HOME\", \"/storage/emulated/0\", TRUE);\n"
+              "    }\n"
+              "}\n"
+              "\n"
+              "static void set_themes_env()"
+          )
+          n1 = s.count(old1)
+          if n1 != 1:
+              print("ERROR: ancla set_themes_env encontrada {} veces (esperado 1)".format(n1))
+              sys.exit(1)
+          s = s.replace(old1, new1)
+
+          # 2) Llamada en main() antes de set_xdg_env() (HOME primero; el resto de
+          #    envs XDG ya los fija el runtime android antes de llamar a main()).
+          old2 = "    set_xdg_env();"
+          new2 = ("    set_home_env(); // FASE10F-1: HOME=/storage/emulated/0 (dialogos de archivo)\n"
+                  "    set_xdg_env();")
+          n2 = s.count(old2)
+          if n2 != 1:
+              print("ERROR: ancla set_xdg_env encontrada {} veces (esperado 1)".format(n2))
+              sys.exit(1)
+          s = s.replace(old2, new2)
+
+          open(p, "w").write(s)
+          print("OK: inkscape-main.cpp fija HOME=/storage/emulated/0 cuando no existe")
+          PYEOF
+          grep -q 'FASE10F-1' src/inkscape-main.cpp \
+            || { echo "ERROR: faltan marcadores FASE10F-1 en inkscape-main.cpp"; exit 1; }
+          echo "OK: parche FASE10F-1 verificado"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail
