@@ -385,18 +385,35 @@ jobs:
           import sys
           p = "src/ui/tools/text-tool.cpp"
           s = open(p).read()
-          old = "                    gtk_im_context_set_cursor_location(imc, &im_cursor);"
-          new = ("                    gtk_im_context_set_cursor_location(imc, &im_cursor);\n"
-                 "                    gtk_im_context_focus_in(imc); // FASE10D-TEXTKEY: re-activa el teclado aunque el canvas ya tenga foco")
-          n = s.count(old)
-          if n != 1:
-              print("ERROR: patron set_cursor_location encontrado {} veces (esperado 1)".format(n))
+
+          # 1) Click en canvas VACIO (rama nascent_object del release de root_handler):
+          #    re-activar el imc en cada click (el canvas ya enfocado no genera focus_in).
+          old1 = "                    gtk_im_context_set_cursor_location(imc, &im_cursor);"
+          new1 = ("                    gtk_im_context_set_cursor_location(imc, &im_cursor);\n"
+                  "                    gtk_im_context_focus_in(imc); // FASE10D-TEXTKEY: re-activa el teclado aunque el canvas ya tenga foco")
+          n1 = s.count(old1)
+          if n1 != 1:
+              print("ERROR: patron1 (canvas vacio) encontrado {} veces (esperado 1)".format(n1))
               sys.exit(1)
-          open(p, "w").write(s.replace(old, new))
-          print("OK: text-tool.cpp re-activa gtk_im_context_focus_in en cada click (FASE10D-TEXTKEY)")
+          s = s.replace(old1, new1)
+
+          # 2) Click sobre TEXTO YA ESCRITO (item_handler press): el item_handler coloca
+          #    el cursor de texto pero nunca pide el teclado. Re-activar imc tambien aqui.
+          old2 = "                    _desktop->getSelection()->set(item_ungrouped);"
+          new2 = ("                    _desktop->getSelection()->set(item_ungrouped);\n"
+                  "                    gtk_im_context_focus_in(imc); // FASE10D-ITEMTAP: tocar un texto ya escrito tambien reabre el teclado")
+          n2 = s.count(old2)
+          if n2 != 1:
+              print("ERROR: patron2 (texto existente) encontrado {} veces (esperado 1)".format(n2))
+              sys.exit(1)
+          s = s.replace(old2, new2)
+
+          open(p, "w").write(s)
+          print("OK: text-tool.cpp re-activa el teclado en canvas vacio y sobre texto existente")
           PYEOF
           grep -q 'FASE10D-TEXTKEY' src/ui/tools/text-tool.cpp \
-            || { echo "ERROR: no quedo FASE10D-TEXTKEY en text-tool.cpp"; exit 1; }
+            && grep -q 'FASE10D-ITEMTAP' src/ui/tools/text-tool.cpp \
+            || { echo "ERROR: faltan marcadores FASE10D en text-tool.cpp"; exit 1; }
           echo "OK: parche FASE10D verificado"
 
       - name: pc overlay (shims Blender) + normalización .pc de .libs
