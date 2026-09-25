@@ -538,9 +538,13 @@ jobs:
               dialog.add_button(accept_label, Gtk::ResponseType::ACCEPT);
               dialog.set_default_response(Gtk::ResponseType::ACCEPT);
 
-              if (filters_model && filters_model->get_n_items() > 0) {
-                  dialog.set_filters(filters_model);
-                  dialog.set_filter(filters_model->get_item(0));
+              if (filters_model) {
+                  for (guint i = 0; i < filters_model->get_n_items(); ++i) {
+                      dialog.add_filter(filters_model->get_item(i));
+                  }
+                  if (filters_model->get_n_items() > 0) {
+                      dialog.set_filter(filters_model->get_item(0));
+                  }
               }
 
               if (multiple) {
@@ -570,7 +574,7 @@ jobs:
                   }
 
                   if (multiple) {
-                      files = dialog.get_files();
+                      files = dialog.get_files2();
                   } else if (auto file = dialog.get_file()) {
                       files.push_back(file);
                   }
