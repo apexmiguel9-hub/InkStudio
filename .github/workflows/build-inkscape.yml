@@ -370,6 +370,35 @@ jobs:
             || { echo "ERROR: no quedó FASE10B-TOUCH en canvas.cpp"; exit 1; }
           echo "OK: enable_autoscroll no-op verificado"
 
+      # FASE10D: teclado de la text tool. El IM context de la tool vive sobre el
+      # CANVAS y pide el teclado SOLO cuando el canvas recibe focus_in. El 1er tap
+      # enfoca el canvas (teclado sale); los taps siguientes caen sobre un canvas
+      # YA enfocado => grab_focus() es no-op => sin focus_in => el GTK nunca
+      # vuelve a pedir el teclado ("sale 1 vez y ya no vuelve"). Fix: re-activar
+      # gtk_im_context_focus_in(imc) en cada click de la text tool (justo donde ya
+      # se posiciona el cursor del IM) => el im context android re-pide el IME.
+      - name: "Parche FASE10D — re-activar el teclado de la text tool en cada click"
+        run: |
+          set -euo pipefail
+          cd inkscape
+          python3 - <<'PYEOF'
+          import sys
+          p = "src/ui/tools/text-tool.cpp"
+          s = open(p).read()
+          old = "                    gtk_im_context_set_cursor_location(imc, &im_cursor);"
+          new = ("                    gtk_im_context_set_cursor_location(imc, &im_cursor);\n"
+                 "                    gtk_im_context_focus_in(imc); // FASE10D-TEXTKEY: re-activa el teclado aunque el canvas ya tenga foco")
+          n = s.count(old)
+          if n != 1:
+              print("ERROR: patron set_cursor_location encontrado {} veces (esperado 1)".format(n))
+              sys.exit(1)
+          open(p, "w").write(s.replace(old, new))
+          print("OK: text-tool.cpp re-activa gtk_im_context_focus_in en cada click (FASE10D-TEXTKEY)")
+          PYEOF
+          grep -q 'FASE10D-TEXTKEY' src/ui/tools/text-tool.cpp \
+            || { echo "ERROR: no quedo FASE10D-TEXTKEY en text-tool.cpp"; exit 1; }
+          echo "OK: parche FASE10D verificado"
+
       - name: pc overlay (shims Blender) + normalización .pc de .libs
         run: |
           set -euo pipefail

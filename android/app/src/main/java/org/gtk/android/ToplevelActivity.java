@@ -143,6 +143,11 @@ public class ToplevelActivity extends Activity {
 						WindowInsetsController controller = getWindowInsetsController();
 						if (imeKeyboardState) {
 							requestFocus();
+							if (activeImContext != null) {
+								// FASE10D-TEXTKEY: tras cerrar el teclado, show(ime) no surte efecto si la
+								// InputConnection quedo desechada por el IME; re-vincular antes de mostrar.
+								getSystemService(InputMethodManager.class).restartInput(this);
+							}
 							if (controller != null)
 								controller.show(WindowInsets.Type.ime());
 						 } else if (controller != null) {
