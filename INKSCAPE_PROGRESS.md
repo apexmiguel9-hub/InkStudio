@@ -5,7 +5,7 @@ Progreso del port de Inkscape a Android nativo (sin GTK4/Cairo). Build vía CI
 usan como referencia/port local (`/root/inkscape`).
 
 Repos: código del prototipo en `prototype/` (rama `alpha-thorvg-rect`).
-Estado general: **Alpha 1 funcional (rectángulo)**.
+Estado general: **Alpha 2 — SelectTool funcional (mover + escala + rotar)**.
 
 ---
 
@@ -137,6 +137,81 @@ Lecciones de calibración:
 3. Documento XML real (`svg:rect` ↔ SPRect) reemplazando el registry.
 4. Undo/redo (DocumentUndo ya es stub), snapping real, capas.
 5. Vulkan (ThorVG wg): fuera de scope de la alpha.
+
+---
+
+## ALPHA 2 — SelectTool: mover + escala + rotar (port + 3 bugs) — 2026-09-26
+
+**Objetivo cumplido:** port del SelectTool de Inkscape (selección por tap,
+handles de escala/rotación, body-drag) y los 3 bugs reportados por el usuario
+en el g56, todos verificados por píxeles en el dispositivo.
+
+### Tiempo real del proceso
+
+| Etapa | Tiempo real (sesión) | Notas |
+|---|---|---|
+| Port select_tool.cpp + shams (seltrans, desktop hit-test, sp_rect.xform) | ~90 min | copia literal del algoritmo; shims nuevos = donde viven los bugs reales |
+| Repro + análisis de píxeles en dispositivo (decoder propio con `*bpp`, BPP=4) | ~60 min | el análisis previo con `*3` era artefacto (zebra, "cue desplazado") |
+| Root cause bugs #2/#3: convención de `tvg::Matrix` (fila vs columna) leída del tag v1.1.2 | ~25 min | tvgMath.h `operator*=(Point&, Matrix&)`: `x'=e11·x+e12·y+e13` |
+| Fix toTvg (traslación a e13/e23) + fix draw(true) (clear de FBO entre frames) | ~15 min | 2 commits, 2 ciclos CI |
+| Batería de verificación en dispositivo (draw→select→move→scale→rotate) | ~45 min | aserciones relativas + handles pegados + anclaje |
+| Desactivar/reactivar rotación (escala primero, rotar después — decisión usuario) | ~10 min | motor de rotación intacto mientras tanto |
+| **Total** | **~4 h** | la lección más cara: convención de matrices de ThorVG |
+
+### Root causes (verificadas contra el tag v1.1.2, no adivinadas)
+
+1. **Lienzo negro al primer arranque** (bug #1): la tool no existía hasta el
+   primer touch y el primer frame se dibujaba vacío. Fix: `ensureTool()` dentro
+   de `frame()` (renderer.cpp). Verificado: primer frame sin tocar = gris.
+2. **Overlay/handles despegados ("al mover solo se mueve el box", "al
+   redimensionar no está centrado", rotación "como una hoja")** (bugs #2/#3):
+   nuestro `toTvg()` mapeaba la traslación a `e31/e32` (tercera FILA), pero
+   ThorVG v1.1.2 multiplica puntos como vectores FILA (`tvgMath.h`:
+   `x'=e11·x+e12·y+e13`, `y'=e21·x+e22·y+e23`): la traslación vive en
+   `e13/e23` (tercera COLUMNA). Resultado: el mimo/scale/rotate correctos en
+   el modelo (el overlay/docBBox los seguía) pero el FILL renderizado en el
+   origen — caja despegada, resize des-anclado, rotación girando alrededor
+   del origen en vez del centro. Fix (renderer.cpp `toTvg()`):
+   `a→e11, c→e12, e→e13 / b→e21, d→e22, f→e23`. Esto explica los 3 síntomas
+   con UNA línea.
+3. **Fantasmas/stale al mover** (complemento del #2): `Canvas::draw(false)`
+   no limpia el target entre frames (thorvg.h v1.1.2: `clear=true` clears the
+   target buffer before drawing); el blit solo sobrescribe la región
+   actualizada → quedaba la silueta del frame anterior. Fix: `draw(true)`
+   (nuestra escena es opaca — el rect de fondo cubre todo — así que el clear
+   es invisible cuando no hay cambios).
+
+### Evidencia por píxeles (batería en el g56, decoder `*bpp` BPP=4)
+
+- S2 select: 8 handles blancos exactos al bbox `(401,402)-(883,688)` (n=64
+  cada uno) + cue pegado (371 muestras del borde).
+- S3 mover: fill `(401,402)→(581,512)`, Δ=(180,110)≈gesto; los 8 handles
+  PEGADOS al nuevo bbox, sin fantasma del rect viejo.
+- S4 escalar: arrastrar TL → TL sigue al dedo y BR anclado (el fix #2 es el
+  anclaje); handles pegados.
+- Rotación (reactivada tras validar escala): gira alrededor del centro del
+  bbox (acumulación incremental `last_ang`/`rot_accum`, sin flip).
+
+### Lecciones de calibración
+
+- **Convención de matrices del motor = el bug más caro**: leer `tvgMath.cpp`
+  del tag ANTES de escribir el mapeo doc→tvg. Un mapeo "obviamente correcto"
+  (traslación abajo a la derecha) estaba muerto en silencio para ThorVG.
+- El decoder de PNG del sandbox SIEMPRE con `(y*W+x)*BPP`; cualquier análisis
+  con `*3` produce artefactos (zebra, overlays "desplazados").
+- `Canvas::draw(false)` acumula el buffer GL: en escenas opacas el omitir el
+  clear ahorra tiempo solo hasta que algo se mueve; el ghost es el síntoma.
+- Auto-layout: toda la math de tools/renderer vive en espacio-doc; `w2d/d2w`
+  y `toTvg()` son el pivote único para mapear a pantalla (seam comentado en
+  `desktop.h`); nada de offsets de pantalla hardcodeados en las tools.
+
+### Falta (orden sugerido)
+
+1. Documento XML real (`svg:rect` ↔ SPRect) reemplazando el registry.
+2. Undo/redo (DocumentUndo stub), snapping real, capas.
+3. Más tools con la misma receta (rect_tool_port / select_tool_port como
+   plantillas).
+4. Vulkan (ThorVG wg): fuera de scope de la alpha.
 
 ---
 

@@ -111,12 +111,10 @@ void SelTrans::initRotateState()
 
 void SelTrans::increaseState()
 {
-    // Rotation is DISABLED until the scale path is verified end-to-end on
-    // the device. The rotate engine below (initRotateState, incremental
-    // accumulation, corner handles + center pivot) stays intact and compiled;
-    // re-enable with the toggle once scale is solid:
-    //   _state = (_state == STATE_SCALE) ? STATE_ROTATE : STATE_SCALE;
-    _state = STATE_SCALE;
+    // scale <-> rotate (toggled by TAP on selected item; align omitted: no
+    // /tools/select/align pref). Rotation was briefly disabled while the
+    // scale path was verified end-to-end; both are now pixel-verified.
+    _state = (_state == STATE_SCALE) ? STATE_ROTATE : STATE_SCALE;
     if (!_center_explicit) {
         _center = Geom::Point{}; // recompute from the selection bbox
     }
