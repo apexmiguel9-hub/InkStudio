@@ -71,6 +71,27 @@ Geom::OptRect SelTrans::bbox() const
     return box;
 }
 
+// The selection's *transformed* outline, as the four doc-space corners of the
+// item's local box under its current xform (TL, TR, BR, BL). The overlay (cue
+// + handles) is drawn from this quad so the box rides the rotated corners
+// instead of the axis-aligned bbox — Inkscape draws its mid-drag outline the
+// same way (_bbox->corner(i) * affine, seltrans.cpp:407). Multi-selections
+// fall back to the union AABB (axis-aligned box around everything).
+std::array<Geom::Point, 4> SelTrans::selectionQuad() const
+{
+    auto rects = selectedRects();
+    if (rects.size() == 1) {
+        return rects[0]->docCorners();
+    }
+    if (auto box = bbox()) {
+        return {box->min(),
+                Geom::Point(box->max()[Geom::X], box->min()[Geom::Y]),
+                box->max(),
+                Geom::Point(box->min()[Geom::X], box->max()[Geom::Y])};
+    }
+    return {Geom::Point(), Geom::Point(), Geom::Point(), Geom::Point()};
+}
+
 Geom::Point SelTrans::center() const
 {
     if (_center_explicit) {
@@ -93,6 +114,7 @@ void SelTrans::snapshot()
     } else {
         _g.bbox0 = Geom::Rect({}, 0, 0);
     }
+    _g.quad0 = selectionQuad();
     _g.center0 = center();
 }
 
@@ -191,29 +213,35 @@ std::vector<SelTrans::HandlePos> SelTrans::handlePositions() const
         c = _center;
     }
 
+    // Handles ride the *transformed* selection box (a rotated quad) rather
+    // than its axis-aligned bbox, so they stay glued to the rotated corners
+    // while the item spins (Inkscape's _bbox->corner(i) * affine outline).
+    auto q = selectionQuad();
+    auto mid = [](Geom::Point const &a, Geom::Point const &b) {
+        return Geom::Point((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+    };
+
     if (_state == STATE_SCALE) {
-        pos.push_back({Handle::TL, {box->min().x, box->min().y}});
-        pos.push_back({Handle::T,  {mx, box->min().y}});
-        pos.push_back({Handle::TR, {box->max().x, box->min().y}});
-        pos.push_back({Handle::R,  {box->max().x, my}});
-        pos.push_back({Handle::BR, {box->max().x, box->max().y}});
-        pos.push_back({Handle::B,  {mx, box->max().y}});
-        pos.push_back({Handle::BL, {box->min().x, box->max().y}});
-        pos.push_back({Handle::L,  {box->min().x, my}});
+        pos.push_back({Handle::TL, q[0]});
+        pos.push_back({Handle::T,  mid(q[0], q[1])});
+        pos.push_back({Handle::TR, q[1]});
+        pos.push_back({Handle::R,  mid(q[1], q[2])});
+        pos.push_back({Handle::BR, q[2]});
+        pos.push_back({Handle::B,  mid(q[2], q[3])});
+        pos.push_back({Handle::BL, q[3]});
+        pos.push_back({Handle::L,  mid(q[3], q[0])});
     } else { // STATE_ROTATE: corners pushed out along the diagonal
-        for (auto corner : {Geom::Point(box->min().x, box->min().y),
-                            Geom::Point(box->max().x, box->min().y),
-                            Geom::Point(box->max().x, box->max().y),
-                            Geom::Point(box->min().x, box->max().y)}) {
-            Geom::Point dir = corner - c;
+        Geom::Point const corners[4] = {q[0], q[1], q[2], q[3]};
+        Handle const ids[4] = {Handle::ROT_TL, Handle::ROT_TR,
+                               Handle::ROT_BR, Handle::ROT_BL};
+        for (int i = 0; i < 4; ++i) {
+            Geom::Point dir = corners[i] - c;
             double len = std::hypot(dir.x, dir.y);
             if (len < 1e-6) {
                 continue;
             }
             dir = dir * (1.0 / len);
-            pos.push_back({static_cast<Handle>(static_cast<int>(Handle::ROT_TL) +
-                                               static_cast<int>(pos.size())),
-                           corner + dir * 28.0});
+            pos.push_back({ids[i], corners[i] + dir * 28.0});
         }
         pos.push_back({Handle::CENTER, c});
     }
@@ -277,51 +305,57 @@ bool SelTrans::moveHandle(Geom::Point const &p)
     if (_state == STATE_ROTATE) {
         rotate = true;
     } else {
-        // scale/stretch: each handle scales about the opposite bbox geometry
-        auto const &b = _g.bbox0;
-        double maxx = b.max().x, maxy = b.max().y;
-        double minx = b.min().x, miny = b.min().y;
-        double midx = (minx + maxx) * 0.5, midy = (miny + maxy) * 0.5;
+        // scale/stretch: each handle scales about the opposite edge/corner of
+        // the snapshot *quad* (the transformed box). Using the rotated frame
+        // keeps the anchor glued to the box while scaling a rotated rect; for
+        // an untransformed selection the quad equals the bbox, so the math is
+        // identical to the old AABB version.
+        auto const &qd = _g.quad0;
+        Geom::Point const qt = qd[0], qtr = qd[1];
+        Geom::Point const qbr = qd[2], qbl = qd[3];
+        auto const mid = [](Geom::Point const &a, Geom::Point const &b) {
+            return Geom::Point((a.x + b.x) * 0.5, (a.y + b.y) * 0.5);
+        };
         Geom::Point s = _g.grab_pos;
         switch (_drag_handle) {
             case Handle::TL:
-                anchor = {maxx, maxy};
-                fx = div0(p.x - maxx, s.x - maxx);
-                fy = div0(p.y - maxy, s.y - maxy);
+                anchor = qbr;
+                fx = div0(p.x - qbr.x, s.x - qbr.x);
+                fy = div0(p.y - qbr.y, s.y - qbr.y);
                 break;
             case Handle::T:
-                anchor = {midx, maxy};
+                anchor = mid(qbr, qbl);
                 fx = 1.0;
-                fy = div0(p.y - maxy, s.y - maxy);
+                fy = div0(p.y - anchor.y, s.y - anchor.y);
                 break;
             case Handle::TR:
-                anchor = {minx, maxy};
-                fx = div0(p.x - minx, s.x - minx);
-                fy = div0(p.y - maxy, s.y - maxy);
+                anchor = qbl;
+                fx = div0(p.x - qbl.x, s.x - qbl.x);
+                fy = div0(p.y - qbl.y, s.y - qbl.y);
                 break;
             case Handle::R:
-                anchor = {minx, midy};
-                fx = div0(p.x - minx, s.x - minx);
+                anchor = mid(qbl, qt);
+                fx = div0(p.x - anchor.x, s.x - anchor.x);
                 fy = 1.0;
                 break;
             case Handle::BR:
-                anchor = {minx, miny};
-                fx = div0(p.x - minx, s.x - minx);
-                fy = div0(p.y - miny, s.y - miny);
+                anchor = qt;
+                fx = div0(p.x - qt.x, s.x - qt.x);
+                fy = div0(p.y - qt.y, s.y - qt.y);
                 break;
             case Handle::B:
-                anchor = {midx, miny};
+                anchor = mid(qt, qtr);
                 fx = 1.0;
-                fy = div0(p.y - miny, s.y - miny);
+                fy = div0(p.y - anchor.y, s.y - anchor.y);
                 break;
             case Handle::BL:
-                anchor = {maxx, miny};
-                fx = div0(p.x - maxx, s.x - maxx);
-                fy = div0(p.y - miny, s.y - miny);
+                anchor = qtr;
+                fx = div0(p.x - qtr.x, s.x - qtr.x);
+                fy = div0(p.y - qtr.y, s.y - qtr.y);
                 break;
             case Handle::L:
-                anchor = {maxx, midy};
-                fx = div0(p.x - maxx, s.x - maxx);
+                anchor = mid(qtr, qbr);
+                fx = div0(p.x - anchor.x, s.x - anchor.x);
                 fy = 1.0;
                 break;
             default:

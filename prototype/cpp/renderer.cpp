@@ -283,14 +283,18 @@ void Renderer::frame()
 
     // ---- selection overlay (only while the select tool is active) -------
     if (Inkscape::SelTrans *st = Inkscape::active_seltrans(); st && !st->isEmpty()) {
-        // per-item bbox cue (Inkscape's "selection bbox", #2A2D35)
+        // per-item cue: the *transformed* box outline (rotates with the fill,
+        // Inkscape's "_bbox->corner(i) * affine" box) — #2A2D35
         for (SPItem *item : desktop->getSelection()->items()) {
             auto *r = dynamic_cast<SPRect *>(item);
             if (!r || r->isEmpty()) continue;
-            Geom::Rect b = r->docBBox();
+            auto c = r->docCorners();
             auto *shape = tvg::Shape::gen();
-            shape->appendRect((float)b.min().x, (float)b.min().y,
-                              (float)b.width(), (float)b.height(), 0.0f, 0.0f);
+            shape->moveTo((float)c[0].x, (float)c[0].y);
+            shape->lineTo((float)c[1].x, (float)c[1].y);
+            shape->lineTo((float)c[2].x, (float)c[2].y);
+            shape->lineTo((float)c[3].x, (float)c[3].y);
+            shape->close();
             shape->strokeWidth(1.0f);
             shape->strokeFill(0x2A, 0x2D, 0x35, 255);
             canvas->add(shape);

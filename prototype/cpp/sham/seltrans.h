@@ -100,6 +100,7 @@ private:
     struct GrabState {
         std::vector<std::pair<SPRect *, Geom::Xform>> start_xforms;
         Geom::Rect bbox0;      // selection bbox at grab time
+        std::array<Geom::Point, 4> quad0; // transformed box corners at grab
         Geom::Point grab_pos;  // where the drag started (doc space)
         Geom::Point center0;   // rotation center at grab time
         double last_ang = 0.0; // finger angle around center0 (rotate drag)
@@ -109,6 +110,9 @@ private:
     void snapshot();
     void initRotateState(); // seed last_ang/rot_accum from grab_pos vs center0
     std::vector<SPRect *> selectedRects() const;
+    // The selection's *transformed* outline: a single rect = its four
+    // doc-space corners (a rotated quad); multi-selection = union AABB.
+    std::array<Geom::Point, 4> selectionQuad() const;
 
     SPDesktop *_desktop;
     State _state = STATE_SCALE;
