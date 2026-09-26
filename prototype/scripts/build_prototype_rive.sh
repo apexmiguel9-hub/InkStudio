@@ -131,7 +131,9 @@ cmake -S "$ROOT/cpp" -B "$WORK/cmake" \
   -DANDROID_STL=c++_static \
   -DCMAKE_BUILD_TYPE=Release \
   -DRIVE_ROOT="$RIVE_SRC" \
-  -DRIVE_BUILD="$RIVE_BUILD"
+  -DRIVE_BUILD="$RIVE_BUILD" \
+  -DRIVE_LIB="$RIVE_LIB" \
+  -DRIVE_PLS_LIB="$RIVE_PLS_LIB"
 cmake --build "$WORK/cmake" --target inkalpha -- -j4
 
 # ---- 3. Package -------------------------------------------------------------
