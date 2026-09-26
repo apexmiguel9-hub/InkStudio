@@ -192,7 +192,48 @@ en el g56, todos verificados por píxeles en el dispositivo.
 - Rotación (reactivada tras validar escala): gira alrededor del centro del
   bbox (acumulación incremental `last_ang`/`rot_accum`, sin flip).
 
-### Lecciones de calibración
+### Alpha 2b — el box se acopla al rotar (overlay por quad rotado) + máquina de estados
+
+**Reporte del usuario:** "funciona el rotate, pero el box se hace un pixel mas
+grande o algo asi... el box es mas visual que problema funcional". El overlay
+(cue + handles) se dibujaba desde `docBBox()` = **AABB** del rect rotado, que
+siempre es más grande que el rect girado → el "box" no se acoplaba al fill.
+
+**Root cause + fix (verificado contra seltrans.cpp real de Inkscape):**
+Inkscape dibuja su caja de selección durante el drag como las esquinas del
+bbox **transformadas** por el affine (`_l[i]->set_coords(_bbox->corner(i) *
+affine)`, `src/seltrans.cpp:407`) — la caja **rota con el contenido**. El
+port la dibujaba como AABB. Fix en 3 piezas:
+
+1. `selectionQuad()` (seltrans): el contorno transformado de la selección —
+   item único = sus 4 `docCorners()` (quad bajo el xform actual); multi-
+   selección = unión AABB (inalterado).
+2. `handlePositions()`: los 8 handles de escala sobre el quad rotado
+   (esquinas + puntos medios de arista) y los 4 de rotación sobre las
+   esquinas del quad + 28px en su diagonal (antes: AABB). El crosshair del
+   pivot sigue en el centro.
+3. `moveHandle()` scale: las anclas/denominadores usan el `quad0` congelado
+   en `grab()` (marco rotado) — para un rect sin rotar el quad == AABB, la
+   math es idéntica (sin regresión en la batería de escala ya validada).
+4. `renderer.cpp` cue: polilínea cerrada sobre `docCorners()` en vez de
+   `appendRect` del AABB.
+
+**Evidencia por píxeles (g56, APK `019b3e6`, decoder `*BPP` BPP=4):** tras
+rotar el rect (drag del handle BR), el fill es un paralelogramo perfecto
+(aristas opuestas paralelas: (392,51) y (-32,243)), con centro invariante
+`(598.3,523.8) ≈ (598.5,524.0)` — el pivot no se mueve, no hay "hoja". El cue
+oscuro queda a **1.0px de las 4 esquinas rotadas** (antes: slack diagonal
+del AABB de decenas de px) y los 4 handles de rotación cabalgan las esquinas
+del quad + 28px en el marco rotado. En escala (sin rotar) la math sobre el
+quad == AABB, por lo que la batería ya validada de move/scale quedó intacta.
+
+**Bonus (máquina de estados, explica captures "raras" del harness):** el rect
+se **auto-selecciona al crearlo** (fiel a Inkscape); el 1er tap sobre un item
+ya seleccionado = `increaseState()` → entra en ROTACIÓN (no escala). Esto es
+comportamiento de Inkscape (2º click conmuta scale↔rotate), no un bug — pero
+fue lo que hizo que las capturas de battery3 mostraran 4 handles de rotación
+"sin que nadie rotara". El tap que no conmuta es porque aterrizó en el
+crosshair del pivot (grab del centro a <40px).
 
 - **Convención de matrices del motor = el bug más caro**: leer `tvgMath.cpp`
   del tag ANTES de escribir el mapeo doc→tvg. Un mapeo "obviamente correcto"
