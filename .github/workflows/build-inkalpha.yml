@@ -36,24 +36,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # The ubuntu runner image preinstalls the Android SDK (build-tools,
-      # platforms, NDK) at $ANDROID_HOME. sdkmanager is only a best-effort
-      # safety net for missing pieces (setup-android@v3 is broken on current
-      # cmdline-tools: its internal `sdkmanager --licenses` exits 1).
-      # Rive REQUIRES exactly NDK r27c = 27.2.12479018.
-      - name: Fill missing SDK bits (best-effort)
+      # Rive REQUIRES exactly NDK r27c = 27.2.12479018 — a HARD error in
+      # rive_build_config.lua. The ubuntu-24.04 runner image preinstalls
+      # NDK 27.3/28.2/29.x but NOT r27c, and has no sdkmanager on PATH, so
+      # we fetch the r27c zip straight from dl.google.com when it's missing.
+      # build-tools + platforms are preinstalled on the image.
+      - name: Ensure NDK r27c (Rive pin)
         run: |
+          set -euo pipefail
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
           echo "SDK root: $SDK"
-          ls "$SDK/build-tools" 2>/dev/null; ls "$SDK/platforms" 2>/dev/null; ls "$SDK/ndk" 2>/dev/null
-          need=""
-          [ -d "$SDK/build-tools" ] || need="$need build-tools;35.0.0"
-          [ -d "$SDK/platforms" ] || need="$need platforms;android-35"
-          [ -d "$SDK/ndk/27.2.12479018" ] || need="$need ndk;27.2.12479018"
-          if [ -n "$need" ]; then
-            yes | sdkmanager --licenses >/dev/null 2>&1 || true
-            yes | sdkmanager --install $need || echo "sdkmanager failed; relying on preinstalled bits"
+          echo "build-tools: $(ls -d "$SDK"/build-tools/*/ 2>/dev/null | xargs -n1 basename | sort -V | tr '\n' ' ')"
+          echo "platforms:   $(ls -d "$SDK"/platforms/android-*/ 2>/dev/null | xargs -n1 basename | sort -V | tr '\n' ' ')"
+          echo "ndk:         $(ls -d "$SDK"/ndk/*/ 2>/dev/null | xargs -n1 basename | sort -V | tr '\n' ' ')"
+          if [ -d "$SDK/ndk/27.2.12479018" ]; then
+            echo "NDK r27c already present."
+          else
+            echo "NDK r27c missing — downloading (~600MB)..."
+            mkdir -p "$SDK/ndk" /tmp/ndk-r27c
+            curl -fsSL -o /tmp/ndk-r27c.zip https://dl.google.com/android/repository/android-ndk-r27c-linux.zip
+            unzip -q /tmp/ndk-r27c.zip -d /tmp/ndk-r27c
+            SRC="$(find /tmp/ndk-r27c -maxdepth 2 -name source.properties -exec dirname {} \; | head -1)"
+            test -n "$SRC"
+            mv "$SRC" "$SDK/ndk/27.2.12479018"
+            echo "Installed NDK at $SDK/ndk/27.2.12479018"
           fi
+          grep -h 'Pkg.Revision' "$SDK/ndk/27.2.12479018/source.properties"
 
       - name: Build InkAlpha APK (Rive Vulkan)
         run: bash prototype/scripts/build_prototype_rive.sh

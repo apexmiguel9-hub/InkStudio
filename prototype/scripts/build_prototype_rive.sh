@@ -19,34 +19,39 @@ RIVE_TAG="${RIVE_TAG:-runtime-v0.1.465}"
 
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 [ -n "$SDK" ] || { echo "ERROR: ANDROID_SDK_ROOT/ANDROID_HOME not set"; exit 1; }
+echo "== SDK: $SDK"
 
-BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+# Discovery must NEVER abort the script silently: under `set -euo pipefail`
+# a failed `ls`/`grep` inside `VAR="$(...)"` kills the script with exit 2 and
+# NO diagnostics (that bit us in CI). Guard every substitution with `|| true`
+# so real failures surface via the explicit checks below.
+BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1 || true)"
 BT="${BT%/}"
-PLATFORM_JAR="$(ls "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)"
-NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
+PLATFORM_JAR="$(ls "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1 || true)"
 
 [ -x "$BT/aapt2" ] || { echo "ERROR: no usable build-tools under $SDK/build-tools"; exit 1; }
 [ -n "$PLATFORM_JAR" ] || { echo "ERROR: no android.jar under $SDK/platforms"; exit 1; }
-[ -n "$NDK" ] || { echo "ERROR: no NDK under $SDK/ndk (workflow sdkmanager step should have installed it)"; exit 1; }
 
-# Rive pins the NDK to r27c (27.2.12479018) — prefer it explicitly (the
-# runner image may also ship newer NDKs; tail -1 would pick the wrong one).
-NDK="$(ls -d "$SDK"/ndk/27.2.12479018 2>/dev/null | head -1)"
-if [ -z "$NDK" ]; then
-  NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
+# Rive pins the NDK to EXACTLY r27c (27.2.12479018) — hard error in
+# rive_build_config.lua. The workflow provisions it when absent. Prefer the
+# exact dir; the fallback exists only to produce a clear error message.
+if [ -d "$SDK/ndk/27.2.12479018" ]; then
+  NDK="$SDK/ndk/27.2.12479018"
+else
+  NDK="$(ls -d "$SDK"/ndk/*/ 2>/dev/null | sort -V | tail -1 || true)"
+  NDK="${NDK%/}"
 fi
-NDK_LONG="$(grep -o 'Pkg.Revision = [0-9.]*' "$NDK/source.properties" 2>/dev/null | awk '{print $3}')"
+[ -n "$NDK" ] || { echo "ERROR: no NDK under $SDK/ndk (workflow step should have provisioned r27c)"; exit 1; }
+NDK_LONG="$(grep -o 'Pkg.Revision = [0-9.]*' "$NDK/source.properties" 2>/dev/null | awk '{print $3}' || true)"
 if [ "$NDK_LONG" != "27.2.12479018" ]; then
   echo "ERROR: Rive requires NDK 27.2.12479018 (r27c); found: $NDK ($NDK_LONG)"
   exit 1
 fi
+echo "== NDK: $NDK"
 
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 TRIPLE="aarch64-linux-android"
 SYSROOT="$TOOLCHAIN/sysroot"
-
-echo "== SDK: $SDK"
-echo "== NDK: $NDK"
 mkdir -p "$WORK"
 
 # ---- 1. rive-runtime (pinned tag; do not move) ----------------------------
