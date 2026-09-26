@@ -97,8 +97,27 @@ if [ ! -d "$SHADER_OUT" ] || [ -z "$(ls -A "$SHADER_OUT" 2>/dev/null)" ]; then
   echo "== Seeding vendored PLS shaders -> $SHADER_OUT"
   mkdir -p "$SHADER_OUT"
   cp -r "$ROOT/vendored/rive_shaders/." "$SHADER_OUT/"
-  find "$SHADER_OUT" -exec touch {} +
 fi
+# CRITICAL: the spirv rule is `<out>.spv: <src> $(OUT)/glsl.stamp`. A plain
+# `touch {}` walk can leave glsl.stamp a NANOSECOND newer than the .spv files
+# (find walks entries in directory order) -> make sees the stamp stale -> runs
+# glslangValidator (absent on the runner) -> Error 127 (CI run #6). Set ONE
+# identical FUTURE timestamp on the whole tree: equal mtimes are never "newer"
+# than each other, and they beat the fresh-clone source mtimes (T≈clone 2026).
+find "$SHADER_OUT" -exec touch -d '2028-01-01 UTC' {} +
+
+# Fail fast: dry-run the EXACT shader make premake will invoke (same OUT/FLAGS).
+# Any pending recipe (glslangValidator / minify.py / spirv-opt) means the corpus
+# is incomplete or timestamps are stale — burn 2s here instead of the whole
+# build. Verified locally: with a complete future-dated corpus this prints
+# "Nothing to be done for 'spirv'." (the clock-skew warning is harmless).
+if make -C "$RIVE_SRC/renderer/src/shaders" -j1 \
+      OUT="$SHADER_OUT" FLAGS="-p $RIVE_SRC/renderer/dependencies/dabeaz_ply_3.11" \
+      -n spirv 2>&1 | grep -qE 'glslangValidator|minify\.py|spirv-opt'; then
+  echo "ERROR: shader make is NOT a no-op — corpus incomplete or timestamps stale"
+  exit 1
+fi
+echo "== Shader make verified no-op (dry-run clean)"
 
 # Our shader seed creates the out dir, so build_rive.sh takes its "existing
 # build" branch and compares .rive_premake_args. Replicate the EXACT string

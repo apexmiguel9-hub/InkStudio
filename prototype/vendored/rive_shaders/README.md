@@ -10,8 +10,22 @@ which requires `glslangValidator` + `spirv-opt` on the PATH. Those are NOT on
 the GitHub runner, so the generated corpus is vendored here and seeded into
 `out/android_arm64_release/include/generated/shaders` by
 `prototype/scripts/build_prototype_rive.sh` right after cloning rive-runtime
-(**before** premake runs) and `touch`-ed so the mtime-based Makefile sees every
-target up to date and skips the toolchain entirely (no-op).
+(**before** premake runs).
+
+## Why the no-op is timestamp-based (and why it needs FUTURE mtimes)
+
+The spirv rule in `renderer/src/shaders/Makefile` is:
+
+    <out>/spirv/<name>.<type>.spv: spirv/<name>.<type> $(OUT)/glsl.stamp | <out>/spirv/.
+
+A plain `touch {}` walk can leave `glsl.stamp` a **nanosecond newer** than the
+`.spv` files (find walks directory entries in hash order), which makes every
+`.spv` look stale → make re-runs `glslangValidator` → `Error 127` on the runner
+(CI run #6). The seed therefore stamps the WHOLE tree with one identical
+**future** timestamp (`touch -d 2028-01-01`): equal mtimes are never "newer"
+than each other, and they beat the fresh-clone source mtimes (~2026). A
+`make -n` dry-run assertion in the build script fails fast if the make is ever
+not a no-op.
 
 Why it's safe to vendor: SPIR-V bytecode is architecture-independent, and the
 `runtime-v0.1.465` tag is pinned (see commit / RIVE_PROGRESS.md). The corpus
