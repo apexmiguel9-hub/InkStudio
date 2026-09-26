@@ -53,6 +53,10 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
+        // Keep the toolbar below the status bar / cutout: the system insets
+        // become root padding instead of letting the strip bleed under the
+        // notch ("el botón está muy arriba" lesson 😄).
+        root.setFitsSystemWindows(true);
 
         // Reusable tool strip (structure from day 1; one tool for now).
         toolbox = new Toolbox(this);
