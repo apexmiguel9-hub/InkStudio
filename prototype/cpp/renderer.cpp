@@ -17,7 +17,6 @@
  */
 #include "renderer.h"
 
-#include <EGL/egl.h>
 #include <android/log.h>
 #include <cmath>
 
@@ -78,32 +77,23 @@ void Renderer::frame()
     ensureCanvas();
     if (!glReady || W <= 0 || H <= 0) return;
 
-    // Attach the GL target: EGL context/surface currently bound by
-    // GLSurfaceView, id 0 = the main (default) surface/FBO. Done every frame
-    // so a recreated EGL context (surface re-created on resume/rotation)
-    // always re-targets the fresh context.
-    EGLDisplay dpy = eglGetCurrentDisplay();
-    EGLSurface srf = eglGetCurrentSurface(EGL_DRAW);
-    EGLContext ctx = eglGetCurrentContext();
-    if (dpy && srf && ctx) {
-        canvas->target(dpy, srf, ctx, 0, (uint32_t)W, (uint32_t)H,
-                       tvg::ColorSpace::ABGR8888);
-    }
+    // Official ThorVG GL usage (v1.1.2 test/testGlCanvas.cpp): GlCanvas
+    // renders into the currently-bound surface; NO target() call. The
+    // pipeline needs update() after add() to process the paints, then
+    // draw()/sync(). (My earlier target(egl...) pushed rendering into a
+    // hidden FBO and the missing update() left the scene unprocessed —
+    // both produced an empty/black canvas.)
+    canvas->viewport(0, 0, W, H);
 
     // Rebuild the scene every frame from the live registry (alpha
     // "document"): confirmed rects + the tool-tracked preview rect.
     // remove(nullptr) frees the paints the canvas owns from the previous
     // frame; add() transfers ownership of the newly built shapes.
-    //
-    // NOTE: no direct GL calls in this file on purpose — a grey background
-    // rect covers the surface instead of glClearColor/glClear (the NDK
-    // link treats gl* as linker-local 8-byte objects and would jump into
-    // unmapped data; eglGetCurrent* DO resolve properly via PLT).
     canvas->remove(nullptr);
 
     auto *bg = tvg::Shape::gen();
     bg->appendRect(0.0f, 0.0f, (float)W, (float)H, 0.0f, 0.0f);
-    bg->fill(0xEF, 0xEF, 0xF4, 255); // 0.949f grey, same as the old clear
+    bg->fill(0xEF, 0xEF, 0xF4, 255); // 0.949f grey, ancient clear colour
     canvas->add(bg);
 
     for (SPRect *r : sprect_registry()) {
@@ -122,8 +112,13 @@ void Renderer::frame()
         canvas->add(shape);
     }
 
-    canvas->draw(true);
-    canvas->sync();
+    tvg::Result r1 = canvas->update();
+    tvg::Result r2 = canvas->draw(false);
+    tvg::Result r3 = canvas->sync();
+    if (r1 != tvg::Result::Success || r2 != tvg::Result::Success ||
+        r3 != tvg::Result::Success) {
+        LOGI("frame: update=%d draw=%d sync=%d", (int)r1, (int)r2, (int)r3);
+    }
 }
 
 void Renderer::touch(float x, float y, int action)
