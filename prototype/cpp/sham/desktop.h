@@ -75,6 +75,10 @@ public:
 
     Geom::Point w2d(Geom::Point const &p) const { return p; } // 1:1 alpha
     Geom::Point d2w(Geom::Point const &p) const { return p; }
+    // AUTO-LAYOUT SEAM: all tool/renderer math lives in doc (= GL surface)
+    // coordinates; w2d/d2w are the single pivot once a real document layout
+    // lands. The GL surface currently sits at screen (115,216) — never
+    // hardcode that offset inside tools; it belongs to the view layer only.
     Geom::Affine dt2doc() const { return Geom::Affine(); }
 
     Inkscape::Selection *getSelection() const;

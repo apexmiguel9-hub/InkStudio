@@ -143,10 +143,12 @@ using OptRect = std::optional<Rect>;
 //   x' = a*x + c*y + e
 //   y' = b*x + d*y + f
 //
-// (row-major [a c e; b d f], column vectors — the same convention 2geom and
-// ThorVG use, so a Xform maps 1:1 onto tvg::Matrix e11=a e21=c e31=e /
-// e12=b e22=d e32=f). The geom_min.h Affine above is kept untouched: the
-// rect tool only ever hands it identity.
+// (row-major [a c e; b d f], column-vector semantics — the 2geom
+// convention. ThorVG's tvg::Matrix is the TRANSPOSE (row-vector
+// semantics): translation lands in e13/e23, not e31/e32; only
+// renderer.cpp toTvg() adapts this form for the renderer.) The geom_min.h
+// Affine above is kept untouched: the rect tool only ever hands it
+// identity.
 // ---------------------------------------------------------------------------
 struct Xform {
     double a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;

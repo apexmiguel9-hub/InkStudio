@@ -111,8 +111,12 @@ void SelTrans::initRotateState()
 
 void SelTrans::increaseState()
 {
-    // scale -> rotate -> scale (align omitted: no /tools/select/align pref)
-    _state = (_state == STATE_SCALE) ? STATE_ROTATE : STATE_SCALE;
+    // Rotation is DISABLED until the scale path is verified end-to-end on
+    // the device. The rotate engine below (initRotateState, incremental
+    // accumulation, corner handles + center pivot) stays intact and compiled;
+    // re-enable with the toggle once scale is solid:
+    //   _state = (_state == STATE_SCALE) ? STATE_ROTATE : STATE_SCALE;
+    _state = STATE_SCALE;
     if (!_center_explicit) {
         _center = Geom::Point{}; // recompute from the selection bbox
     }

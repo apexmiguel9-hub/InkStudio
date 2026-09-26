@@ -192,15 +192,20 @@ void Renderer::touch(float x, float y, int action)
     }
 }
 
-// Xform (x'=a·x+c·y+e / y'=b·x+d·y+f) -> tvg::Matrix
-// (x'=e11·x+e21·y+e31 / y'=e12·x+e22·y+e32), confirmed against
-// thorvg-v112.h Matrix {e11..e33}.
+// Doc Xform (x'=a·x+c·y+e / y'=b·x+d·y+f) -> tvg::Matrix.
+// ThorVG v1.1.2 multiplies points as ROW vectors (tvgMath.h operator*=
+// Point&, Matrix&): x' = e11·x + e12·y + e13, y' = e21·x + e22·y + e23,
+// so the translation lives in the THIRD COLUMN (e13/e23), not the third
+// row. Mapping: a->e11, c->e12, e->e13 / b->e21, d->e22, f->e23.
+// The old layout put translation in e31/e32: ThorVG silently dropped it —
+// shapes "moved" in the document model but rendered pinned at the origin,
+// which is exactly the detached selection-box/overlay bugs users saw.
 static tvg::Matrix toTvg(Geom::Xform const &xf)
 {
     tvg::Matrix m;
-    m.e11 = (float)xf.a; m.e12 = (float)xf.b; m.e13 = 0.0f;
-    m.e21 = (float)xf.c; m.e22 = (float)xf.d; m.e23 = 0.0f;
-    m.e31 = (float)xf.e; m.e32 = (float)xf.f; m.e33 = 1.0f;
+    m.e11 = (float)xf.a; m.e12 = (float)xf.c; m.e13 = (float)xf.e;
+    m.e21 = (float)xf.b; m.e22 = (float)xf.d; m.e23 = (float)xf.f;
+    m.e31 = 0.0f;        m.e32 = 0.0f;        m.e33 = 1.0f;
     return m;
 }
 
