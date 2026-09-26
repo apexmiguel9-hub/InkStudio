@@ -122,13 +122,22 @@ zip -q -u base.apk classes.dex lib/arm64-v8a/libinkalpha.so
 
 "$BT/zipalign" -f 4 base.apk aligned.apk
 
-keytool -genkeypair -keystore "$WORK/debug.keystore" \
-  -storepass inkalpha -keypass inkalpha \
-  -alias inkalpha -keyalg RSA -keysize 2048 -validity 10000 \
-  -dname "CN=InkAlpha" >/dev/null 2>&1 || true
+# Stable debug keystore committed to the repo (prototype/android/debug.keystore)
+# so every CI build produces the SAME signature and `adb install -r` updates
+# work across runs. Fall back to a local one (new signature each run) only if
+# the committed store is missing.
+KEYSTORE="$ROOT/android/debug.keystore"
+if [ ! -f "$KEYSTORE" ]; then
+  echo "WARNING: no committed debug.keystore; generating an ad-hoc one (signature will differ per build)"
+  KEYSTORE="$WORK/debug.keystore"
+  keytool -genkeypair -keystore "$KEYSTORE" \
+    -storepass inkalpha -keypass inkalpha \
+    -alias inkalpha -keyalg RSA -keysize 2048 -validity 10000 \
+    -dname "CN=InkAlpha" >/dev/null 2>&1 || true
+fi
 
 "$BT/apksigner" sign \
-  --ks "$WORK/debug.keystore" --ks-key-alias inkalpha \
+  --ks "$KEYSTORE" --ks-key-alias inkalpha \
   --ks-pass pass:inkalpha --key-pass pass:inkalpha \
   --out "$WORK/inkalpha-debug.apk" aligned.apk
 
