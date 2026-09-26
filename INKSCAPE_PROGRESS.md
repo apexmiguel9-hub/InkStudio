@@ -23,7 +23,8 @@ aislado entre toolbar y canvas (lección FASE13: vistas separadas).
 | Inventario previo (rect-tool, sp-rect, eventos, snap) | ~45 min | análisis honesto antes de tocar código |
 | Port C++ + harness (sham/) + primer build lógico local | ~60 min | incl. 2 rondas de fix por `-fsyntax-only` local (dispatcher inspect_event, tipos geom_min, API ThorVG real) |
 | Renderer ThorVG + JNI + MainActivity + packaging script + workflow CI | ~45 min | contra header ThorVG v1.1.2 verificado, NO adivinado |
-| **Total** | **~2.5 h** | sin contar el build de CI (~10-15 min by runner) |
+| APK instalable + depuración en dispositivo g56 (crash SIGSEGV + 3 ciclos de canvas negro → gris+rects) | ~60 min | 4 iteraciones CI (runs 4-7) con verificación por píxeles; ver tabla abajo |
+| **Total** | **~3.5 h** | incl. el debugging GL en hardware real (la parte que más cuesta) |
 
 **Qué tan directo fue el port (números honestos):**
 
@@ -79,12 +80,47 @@ pipeline detectados y corregidos: 2 (setup-android deprecated/roto, nombre de
 lib meson). El bug que se evitó de diseño: `-Dextra=opengl_es` obligatorio en
 ThorVG (default compila desktop GL — 100% roto en drivers Android).
 
+### Depuración en dispositivo g56 (la parte que nadie estima bien)
+
+El APK instalado NO renderizaba al primer intento. Datos reales (cada fila =
+una iteración CI completa + instalación + verificación por píxeles):
+
+| Run | Síntoma en el g56 | Evidencia | Causa raíz | Fix |
+|---|---|---|---|---|
+| 3 | SIGSEGV al primer frame | logcat `Fatal signal 11` + readelf: símbolos `gl*` = OBJECT local en data (8 bytes), fuera del LOAD RX → `bl` a memoria sin mapear | Nuestro código llamaba GL directo | Cero GL directo en el app; fondo = `tvg::Shape` gris a lienzo completo |
+| 4 | Corría, canvas negro | píxeles: gris≈8/162000 muestras (fondo nunca dibujado) | `target()` sin `update()` → escena sin procesar | target + update juntos |
+| 5 | Corría, canvas negro | logcat `frame: update=2 draw=2` = `Result::InsufficientCondition` | GlCanvas SIN `target()`: update/draw no pueden renderizar | re-añadir `target(EGL, id=0)` por frame (contexto recreable) |
+| 6 | Corría, canvas negro | logcat `update=2 draw=2` aun CON target | `GlRenderer::target` v1.1.2: `if (cs != ColorSpace::ABGR8888S) return NonSupport` (5) — se pasaba `ABGR8888` (premultiplicado) | `ColorSpace::ABGR8888S` |
+| 7 | **VERDE** | píxeles: `(239,239,244)` gris canvas, `(52,102,255)` fill rect (blend exacto alpha 240 sobre gris), `(29,42,89)` stroke, toolbar `(30,31,38)` bajo la barra de sistema | — | — |
+
+Lecciones de calibración:
+- **4 iteraciones de CI solo para que el render GL funcionara en Android**
+  (runs 4-7) pese a tener el header ThorVG real y la impl leída del tag
+  v1.1.2 — el header no captura que GlCanvas exige `target()` + `ABGR8888S`.
+  Próximo backend: leer `tvgGlRenderer.cpp::target()` del tag ANTES de
+  escribir el primer `frame()`.
+- Loguear SIEMPRE el Result de `target()` también (no solo update/draw):
+  el NonSupport del colorspace era silencioso, solo se veía el 2 colateral
+  de update/draw. Enum: Success=0, InvalidArguments=1, InsufficientCondition=2,
+  FailedAllocation=3, MemoryCorruption=4, NonSupport=5.
+- Pantalla negra ≠ crash: la verificación por píxeles (screencap + muestreo)
+  distingue "no hubo draw" de "draw mal"; sin ella, la hipótesis "GLSurfaceView
+  no funciona" habría causado rewrites inútiles.
+- Firma estable entre builds = keystore debug commiteado → `adb install -r`
+  directo sin uninstall, y 1 solo download APK por iteración.
+
 ### Validación del APK (verificada, no asumida)
 
 - Estructura: AndroidManifest binario, classes.dex, `lib/arm64-v8a/libinkalpha.so`
   (6.3 MB, ThorVG estático dentro), bloque firma v1 ✓.
 - `.so`: ELF64 AArch64 DYN, exports `Java_org_inkscape_alpha_MainActivity_nativeInit/Resize/Frame/Touch/SetTool` ✓.
-- Pendiente de verificar: comportamiento en dispositivo g56 (instalar y dibujar).
+- **Dispositivo g56 (verificado en vivo)**: instalado con `adb install -r`;
+  3 rects dibujados por swipe (`input swipe`) — touch → ButtonPress/Motion/
+  ButtonRelease verbatim de rect-tool.cpp — acumulados en el registry
+  (verificado por incremento de píxeles azules por cada rect, incluido uno
+  disjunto en zona vacía). 0 crashes (`Fatal signal`/SIGSEGV = 0).
+  Toolbar visible bajo la barra de sistema/notch (`fitsSystemWindows` —
+  fix del reporte "el botón está muy arriba").
 
 ### Validación local (sin NDK)
 
