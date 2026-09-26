@@ -82,7 +82,8 @@ meson setup "$WORK/thorvg-build" "$TVG_SRC" \
   --prefix "$WORK/thorvg-install"
 meson install -C "$WORK/thorvg-build"
 
-THORVG_LIB="$(find "$WORK/thorvg-build" "$WORK/thorvg-install" -name 'libthorvg.a' | head -1)"
+# meson names the lib "libthorvg-<vmaj>.a" (library('thorvg-' + vmaj)).
+THORVG_LIB="$(find "$WORK/thorvg-build" "$WORK/thorvg-install" -name 'libthorvg*.a' | head -1)"
 [ -n "$THORVG_LIB" ] || { echo "ERROR: libthorvg.a not produced"; exit 1; }
 echo "== ThorVG static lib: $THORVG_LIB"
 
