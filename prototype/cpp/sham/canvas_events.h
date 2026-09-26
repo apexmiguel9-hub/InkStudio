@@ -12,6 +12,7 @@
 
 #include "geom_min.h"
 #include "ink_compat.h"
+#include <type_traits>
 
 namespace Inkscape::UI {
 namespace Events {
@@ -24,7 +25,9 @@ enum EventType {
     MOTION = 16,
     GRAB = 32,
     RELEASE = 64,
-    EVENT_MASK = 0xff,
+    ENTER = 128,
+    LEAVE = 256,
+    EVENT_MASK = 0xff, // grab masks only cover press/release/motion/keys
 };
 using EventMask = unsigned;
 } // namespace Events
@@ -33,6 +36,8 @@ using EventMask = unsigned;
 struct CanvasEvent {
     virtual ~CanvasEvent() = default;
     unsigned modifiers = 0;
+    // Modifier state *after* this event (used by the keyboard handlers).
+    unsigned modifiersAfter() const { return modifiers; }
 };
 
 struct ButtonEvent : CanvasEvent {
@@ -57,6 +62,15 @@ struct KeyReleaseEvent final : KeyEvent {};
 struct MotionEvent final : CanvasEvent {
     Geom::Point pos;
     Geom::Point orig_pos;
+};
+
+struct EnterEvent final : CanvasEvent {};
+struct LeaveEvent final : CanvasEvent {};
+
+// Scroll wheel event (never synthesized on touch; the handler compiles).
+struct ScrollEvent final : CanvasEvent {
+    Geom::Point delta;
+    Geom::Point pos;
 };
 
 // inspect_event: mimics Inkscape's visitor dispatcher (ui/widget/events/
@@ -110,6 +124,27 @@ inline void dispatch(CanvasEvent const &e, F &&f) {
             f(*p);
         return;
     }
+    if (auto const *p = dynamic_cast<ScrollEvent const *>(&e)) {
+        if constexpr (std::is_invocable_v<F, ScrollEvent const &>)
+            f(*p);
+        else if constexpr (std::is_invocable_v<F, CanvasEvent const &>)
+            f(*p);
+        return;
+    }
+    if (auto const *p = dynamic_cast<EnterEvent const *>(&e)) {
+        if constexpr (std::is_invocable_v<F, EnterEvent const &>)
+            f(*p);
+        else if constexpr (std::is_invocable_v<F, CanvasEvent const &>)
+            f(*p);
+        return;
+    }
+    if (auto const *p = dynamic_cast<LeaveEvent const *>(&e)) {
+        if constexpr (std::is_invocable_v<F, LeaveEvent const &>)
+            f(*p);
+        else if constexpr (std::is_invocable_v<F, CanvasEvent const &>)
+            f(*p);
+        return;
+    }
     // bare canvas event: only a fallback lambda can consume it.
     if constexpr (std::is_invocable_v<F, CanvasEvent const &>)
         f(e);
@@ -133,6 +168,19 @@ inline bool mod_shift_only(Inkscape::UI::CanvasEvent const &event) {
 
 inline bool mod_ctrl_only(Inkscape::UI::CanvasEvent const &event) {
     return (event.modifiers & GDK_CONTROL_MASK) && !(event.modifiers & (GDK_SHIFT_MASK | GDK_MOD1_MASK));
+}
+
+// Single-key modifier tests referenced by select-tool.cpp.
+inline bool mod_ctrl(Inkscape::UI::CanvasEvent const &event) {
+    return (event.modifiers & GDK_CONTROL_MASK) != 0;
+}
+
+inline bool mod_shift(Inkscape::UI::CanvasEvent const &event) {
+    return (event.modifiers & GDK_SHIFT_MASK) != 0;
+}
+
+inline bool mod_alt(Inkscape::UI::CanvasEvent const &event) {
+    return (event.modifiers & GDK_MOD1_MASK) != 0;
 }
 
 #endif // SHAM_CANVAS_EVENTS_H

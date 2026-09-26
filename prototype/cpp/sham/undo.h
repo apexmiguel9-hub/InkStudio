@@ -16,6 +16,10 @@ class DocumentUndo {
 public:
     static void done(SPDocument *, char const * /*description*/, char const * /*icon*/) {}
     static void cancel(SPDocument *) {}
+    // undo() is called by sp_select_context_abort() to revert a canceled move
+    // drag. The alpha's direct xform writes have no undo stack yet, but the
+    // tool-side cancel path (item->document set) still must compile.
+    static void undo(SPDocument *) {}
 };
 
 } // namespace Inkscape

@@ -22,6 +22,19 @@ enum MessageType {
     CLEAR_MESSAGE,
 };
 
+// MessageStack: desktop-level message channel (status-bar / HUD). The
+// SelectionDescriber and the tools flash messages into it; same storage as
+// MessageContext for now, merged when the HUD arrives.
+class MessageStack {
+public:
+    void flash(MessageType /*type*/, std::string const &msg) { lastMessage = msg; }
+    std::string const &getMessage() const { return lastMessage; }
+    void clear() { lastMessage.clear(); }
+
+private:
+    std::string lastMessage;
+};
+
 class MessageContext {
 public:
     void set(MessageType /*type*/, std::string const &msg) { lastMessage = msg; }

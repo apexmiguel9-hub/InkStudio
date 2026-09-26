@@ -12,6 +12,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdarg>
+#include <cstdio>
 #include <string>
 
 // i18n: alpha has no translations; _() is identity.
@@ -21,6 +23,7 @@
 
 // glib typedefs/macros used by the ported code
 using gdouble = double;
+using gint = int;
 
 #ifndef CLAMP
 #define CLAMP(x, lo, hi) std::clamp((x), static_cast<double>(lo), static_cast<double>(hi))
@@ -52,14 +55,56 @@ using gdouble = double;
 #define GDK_BUTTON2_MASK  (1 << 9)
 #define GDK_BUTTON3_MASK  (1 << 10)
 
-// GDK keysyms referenced by rect-tool.cpp key handler
-#define GDK_KEY_Escape     0xff1b
-#define GDK_KEY_space      0x20
-#define GDK_KEY_g          0x67
-#define GDK_KEY_G          0x47
-#define GDK_KEY_Delete     0xffff
-#define GDK_KEY_KP_Delete  0xff9f
-#define GDK_KEY_BackSpace  0xff08
+// GDK keysyms referenced by the tool key handlers (rect + select).
+// touchan unreachable (no keyboard), but the handlers must compile.
+#define GDK_KEY_Escape       0xff1b
+#define GDK_KEY_space        0x20
+#define GDK_KEY_Return       0xff0d
+#define GDK_KEY_Tab          0xff09
+#define GDK_KEY_ISO_Left_Tab 0xfe20
+#define GDK_KEY_BackSpace    0xff08
+#define GDK_KEY_Delete       0xffff
+#define GDK_KEY_KP_Delete    0xff9f
+#define GDK_KEY_Left         0xff51
+#define GDK_KEY_Up           0xff52
+#define GDK_KEY_Right        0xff53
+#define GDK_KEY_Down         0xff54
+#define GDK_KEY_KP_Left      0xff96
+#define GDK_KEY_KP_Up        0xff97
+#define GDK_KEY_KP_Right     0xff98
+#define GDK_KEY_KP_Down      0xff99
+#define GDK_KEY_Alt_L        0xffe9
+#define GDK_KEY_Alt_R        0xffea
+#define GDK_KEY_Meta_L       0xffe7
+#define GDK_KEY_Meta_R       0xffe8
+#define GDK_KEY_a            0x61
+#define GDK_KEY_A            0x41
+#define GDK_KEY_c            0x63
+#define GDK_KEY_C            0x43
+#define GDK_KEY_g            0x67
+#define GDK_KEY_G            0x47
+#define GDK_KEY_s            0x73
+#define GDK_KEY_S            0x53
+
+// glib string/assert helpers referenced by select-tool.cpp.
+inline char *g_strdup_printf(char const *fmt, ...)
+{
+    va_list ap;
+    va_start(ap, fmt);
+    va_list aq;
+    va_copy(aq, ap);
+    int n = vsnprintf(nullptr, 0, fmt, aq);
+    va_end(aq);
+    char *buf = new char[n + 1];
+    vsnprintf(buf, n + 1, fmt, ap);
+    va_end(ap);
+    return buf;
+}
+
+inline void g_free(void *p)
+{
+    delete[] static_cast<char *>(p);
+}
 
 // Inkscape: 2geom/geometry.h — golden ratio used by the constrain math.
 static const double goldenratio = 1.6180339887498948482;
@@ -69,5 +114,15 @@ static const double goldenratio = 1.6180339887498948482;
 namespace Glib {
 using ustring = std::string;
 } // namespace Glib
+
+#ifndef g_assert
+#define g_assert(expr) ((void)0)
+#endif
+#define g_assert_not_reached() ((void)0)
+#define g_return_if_fail(expr) ((void)0)
+
+// gettext macros referenced by the ported tool sources (no i18n layer yet).
+// _() is already defined above; N_() marks translatable strings.
+#define N_(s) (s)
 
 #endif // SHAM_INK_COMPAT_H

@@ -20,8 +20,10 @@ import javax.microedition.khronos.opengles.GL10;
 /**
  * InkAlpha — native canvas prototype (NDK + ThorVG, GL backend).
  *
- * One tool for now: the rectangle, whose interaction logic is ported from
- * Inkscape's ui/tools/rect-tool.cpp (see prototype/cpp/tool/).
+ * Two tools, both ported from Inkscape's ui/tools (see prototype/cpp/tool/):
+ * the Select tool (move + rubberband + scale/rotate handles) and the Rect
+ * tool. Rect interaction logic is ported verbatim from rect-tool.cpp; Select
+ * is default.
  *
  * Gesture isolation (FASE13 lesson): the toolbox strip and the canvas are
  * separate views with their own touch targets — a touch that starts on the
@@ -30,7 +32,8 @@ import javax.microedition.khronos.opengles.GL10;
  */
 public class MainActivity extends Activity implements GLSurfaceView.Renderer {
 
-    private static final int TOOL_RECT = 0;
+    private static final int TOOL_SELECT = 0; // default tool
+    private static final int TOOL_RECT = 1;
 
     private GLSurfaceView canvas;
     private Toolbox toolbox;
@@ -58,10 +61,11 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
         // notch ("el botón está muy arriba" lesson 😄).
         root.setFitsSystemWindows(true);
 
-        // Reusable tool strip (structure from day 1; one tool for now).
+        // Reusable tool strip: Select (default) + Rect.
         toolbox = new Toolbox(this);
+        toolbox.addTool(TOOL_SELECT, "\u2316  Selector");
         toolbox.addTool(TOOL_RECT, "\u25A1  Rect\u00E1ngulo");
-        toolbox.select(TOOL_RECT);
+        toolbox.select(TOOL_SELECT);
         root.addView(toolbox, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 

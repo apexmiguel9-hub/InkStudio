@@ -13,9 +13,11 @@ add_library(inkalpha SHARED
     jni_bridge.cpp
     renderer.cpp
     tool/rect_tool_port.cpp
+    tool/select_tool_port.cpp
     sham/tool_base.cpp
     sham/snap.cpp
     sham/desktop.cpp
+    sham/seltrans.cpp
 )
 
 target_include_directories(inkalpha PRIVATE

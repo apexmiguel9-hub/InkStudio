@@ -10,6 +10,14 @@
 
 namespace Inkscape::Util {
 
+// ActionAccel abstraction (select-tool keeps _acc_st_grab/scale/rotate for
+// the sticky-transform key bindings; on touch they never trigger).
+class ActionAccel {
+public:
+    explicit ActionAccel(char const * /*action_name*/) {}
+    template <typename EventType> bool isTriggeredBy(EventType const &) const { return false; }
+};
+
 class Quantity {
 public:
     Quantity(double value, char const * /*unit*/) : _value(value) {}

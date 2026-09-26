@@ -14,6 +14,8 @@
 #include "desktop.h"
 #include "message.h"
 #include "mods.h"
+#include "prefs.h"
+#include "tool_base.h" // full ToolBase definition (prefsPath(), set())
 
 #include <cmath>
 
@@ -26,10 +28,16 @@ namespace Inkscape {
 // context-fns.h stubs
 // ---------------------------------------------------------------------
 
-SPItem *sp_event_context_find_item(SPDesktop const *, Geom::Point const &, bool, bool)
+SPItem *sp_event_context_find_item(SPDesktop const *desktop, Geom::Point const &p, bool select_under, bool into_groups)
 {
-    // Alpha: no item picking yet (click-select comes with the selector tool).
-    return nullptr;
+    // Real hit-testing: topmost item whose transformed geometry contains p.
+    // select_under picks the bottom-most of the stack (used by alt+click and
+    // the node tool; unreachable on touch but implemented anyway).
+    if (select_under) {
+        auto items = desktop->getItemsAtPoints({p}, false, false);
+        return desktop->getItemFromListAtPointBottom(items, p);
+    }
+    return desktop->getItemAtPoint(p, into_groups, nullptr);
 }
 
 bool sp_event_context_knot_mouseover()
@@ -44,9 +52,15 @@ bool have_viable_layer(SPDesktop const *, MessageContext *)
     return true;
 }
 
-void sp_event_context_read(UI::Tools::ToolBase * /*tool*/, char const * /*key*/)
+void sp_event_context_read(UI::Tools::ToolBase *tool, char const *key)
 {
-    // Alpha: rx=ry=0 (sharp corners); the pref bridge arrives later.
+    // Alpha pref bridge: /tools/<tool>/<key> -> ToolBase::set(Entry). The
+    // same shape as Inkscape's context-fns.cpp (reads the pref, hands the
+    // entry to the tool). String keys ("show"/"transform") and double keys
+    // (rx/ry) both flow through; unknown keys are no-ops in the tools' set().
+    auto *prefs = Inkscape::Preferences::get();
+    std::string path = tool->prefsPath() + "/" + key;
+    tool->set(Inkscape::Preferences::Entry(std::string(key), prefs->getString(path)));
 }
 
 // ---------------------------------------------------------------------

@@ -51,6 +51,7 @@ public:
     MessageContext *defaultMessageContext() const { return message_context.get(); }
     SPDesktop *getDesktop() const { return _desktop; }
     SPGroup *currentLayer() const { return nullptr; } // alpha: no layer model
+    std::string const &prefsPath() const { return _prefs_path; }
 
 protected:
     SPDesktop *_desktop;
@@ -80,6 +81,12 @@ protected:
     void gobble_motion_events(unsigned) {}
     void discard_delayed_snap_event() {}
     bool deleteSelectedDrag(bool) { return false; } // no selection deletion yet
+
+    // cursor swap is a no-op (no mouse in the alpha; touch has no cursor)
+    void set_cursor(std::string const &) {}
+    void set_cursor(gint /*icon*/) {}
+    // key auto-repeat check; touch has no keyboard, so "one key press" = 0 extra.
+    gint gobble_key_events(unsigned /*keyval*/, gint /*n_presses*/) { return 0; }
 };
 
 } // namespace Tools
