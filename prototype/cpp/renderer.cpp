@@ -18,7 +18,6 @@
 #include "renderer.h"
 
 #include <EGL/egl.h>
-#include <GLES2/gl2.h>
 #include <android/log.h>
 #include <cmath>
 
@@ -77,10 +76,6 @@ void Renderer::setTool(int t)
 void Renderer::frame()
 {
     ensureCanvas();
-    glViewport(0, 0, W, H);
-    glClearColor(0.949f, 0.949f, 0.957f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
     if (!glReady || W <= 0 || H <= 0) return;
 
     // Attach the GL target: EGL context/surface currently bound by
@@ -99,7 +94,18 @@ void Renderer::frame()
     // "document"): confirmed rects + the tool-tracked preview rect.
     // remove(nullptr) frees the paints the canvas owns from the previous
     // frame; add() transfers ownership of the newly built shapes.
+    //
+    // NOTE: no direct GL calls in this file on purpose — a grey background
+    // rect covers the surface instead of glClearColor/glClear (the NDK
+    // link treats gl* as linker-local 8-byte objects and would jump into
+    // unmapped data; eglGetCurrent* DO resolve properly via PLT).
     canvas->remove(nullptr);
+
+    auto *bg = tvg::Shape::gen();
+    bg->appendRect(0.0f, 0.0f, (float)W, (float)H, 0.0f, 0.0f);
+    bg->fill(0xEF, 0xEF, 0xF4, 255); // 0.949f grey, same as the old clear
+    canvas->add(bg);
+
     for (SPRect *r : sprect_registry()) {
         float x = (float)r->x.computed;
         float y = (float)r->y.computed;
@@ -116,7 +122,7 @@ void Renderer::frame()
         canvas->add(shape);
     }
 
-    canvas->draw(false);
+    canvas->draw(true);
     canvas->sync();
 }
 

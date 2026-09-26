@@ -80,7 +80,18 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
                         action = 2;
                         break;
                 }
-                nativeTouch(e.getX(), e.getY(), action);
+                // Snapshot coords now (MotionEvent is recycled after onTouch),
+                // then run the tool state change on the GL thread so it never
+                // races with frame() — same thread owns tool + registry.
+                final float x = e.getX();
+                final float y = e.getY();
+                final int act = action;
+                canvas.queueEvent(new Runnable() {
+                    @Override
+                    public void run() {
+                        nativeTouch(x, y, act);
+                    }
+                });
                 canvas.requestRender();
                 return true;
             }
