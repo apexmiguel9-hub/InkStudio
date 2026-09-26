@@ -71,6 +71,7 @@ target_include_directories(inkalpha PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tool
     ${RIVE_INC}
     ${RIVE_RENDERER_INC}
+    ${RIVE_RENDERER_INC}/../src   # bootstrap's #include "shaders/constants.glsl"
     ${RIVE_VKB_INC}
     ${RIVE_GEN_INC}
     ${VK_HEADERS_INC}

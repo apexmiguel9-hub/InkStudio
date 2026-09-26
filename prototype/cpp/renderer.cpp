@@ -56,6 +56,14 @@
 #include "rive_vk_bootstrap/vulkan_instance.hpp"
 #include "rive_vk_bootstrap/vulkan_swapchain.hpp"
 
+// rive_types.hpp defines `#define RELEASE 1` as a build-mode marker. The
+// engine-agnostic canvas_events.h (byte-identical to the ThorVG port) has
+// `RELEASE = 64` in its EventMask enum, so it must never see that macro.
+// rive only references RELEASE in the `#ifndef RELEASE` self-guard at its own
+// definition point (no later header re-checks it), so undefining here is safe
+// for the rest of this translation unit.
+#undef RELEASE
+
 #include "canvas_events.h"
 #include "ink_compat.h"     // GDK_BUTTON1_MASK
 #include "sp_rect.h"        // sprect_registry(), SPRect
@@ -410,6 +418,7 @@ void Renderer::ensureCanvas()
         .minimumSupportedInstanceVersion = VK_API_VERSION_1_1,
         .requiredExtensions =
             rive::make_span(extensions.data(), extensions.size()),
+        .optionalExtensions = {},
 #ifndef NDEBUG
         .desiredValidationType = VulkanValidationType::core,
         .wantDebugCallbacks = true,
