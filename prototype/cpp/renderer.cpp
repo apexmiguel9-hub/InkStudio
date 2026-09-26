@@ -42,6 +42,7 @@
 #include "seltrans.h"   // active_seltrans(), handle overlay engine
 #include "rect_tool_port.h"
 #include "select_tool_port.h"
+#include "node_tool_port.h"
 
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "inkalpha", __VA_ARGS__)
 
@@ -67,6 +68,8 @@ void Renderer::recreateTool()
     }
     if (toolId == 1) { // TOOL_RECT
         tool = new Inkscape::UI::Tools::RectTool(desktop);
+    } else if (toolId == 2) { // TOOL_NODE
+        tool = new Inkscape::UI::Tools::NodeTool(desktop);
     } else {           // 0 = TOOL_SELECT (default)
         tool = new Inkscape::UI::Tools::SelectTool(desktop);
     }
@@ -215,6 +218,70 @@ static bool isIdentity(Geom::Xform const &xf)
            xf.e == 0.0 && xf.f == 0.0;
 }
 
+// ---- Node Tool overlay (Option 1: shim over rect) -----------------------
+// Draws 8 scale handles (10x10 white squares with #101014 stroke) on the
+// rect's docCorners + mid-edges, plus 4 rotate handles (r=7 white circles
+// at 28px diagonal from corners) + center crosshair (dark).
+static void drawNodeOverlay(tvg::Canvas *canvas, const SPRect *r)
+{
+    if (!r || r->isEmpty()) return;
+    auto c = r->docCorners();
+    Geom::Point c0 = c[0], c1 = c[1], c2 = c[2], c3 = c[3];
+
+    // Scale handles: corners + mid-edges (8 total)
+    Geom::Point handles[8] = {
+        c0,
+        {(c0.x + c1.x) * 0.5, (c0.y + c1.y) * 0.5},
+        c1,
+        {(c1.x + c2.x) * 0.5, (c1.y + c2.y) * 0.5},
+        c2,
+        {(c2.x + c3.x) * 0.5, (c2.y + c3.y) * 0.5},
+        c3,
+        {(c3.x + c0.x) * 0.5, (c3.y + c0.y) * 0.5}
+    };
+
+    for (int i = 0; i < 8; ++i) {
+        auto *shape = tvg::Shape::gen();
+        shape->appendRect((float)handles[i].x - 5.0f, (float)handles[i].y - 5.0f,
+                          10.0f, 10.0f, 0.0f, 0.0f);
+        shape->fill(255, 255, 255, 255);
+        shape->strokeWidth(1.0f);
+        shape->strokeFill(0x10, 0x10, 0x14, 255);
+        canvas->add(shape);
+    }
+
+    // Rotate handles: 4 circles at 28px diagonal from corners
+    const double ROT_OFF = 28.0;
+    for (int i = 0; i < 4; ++i) {
+        Geom::Point next = c[(i + 1) % 4];
+        Geom::Point diag = {next.x - c[i].x, next.y - c[i].y};
+        double len = std::sqrt(diag.x * diag.x + diag.y * diag.y);
+        if (len > 0) {
+            diag.x = diag.x / len * ROT_OFF;
+            diag.y = diag.y / len * ROT_OFF;
+        }
+        Geom::Point rh = {c[i].x - diag.x, c[i].y - diag.y};
+        auto *shape = tvg::Shape::gen();
+        shape->appendCircle((float)rh.x, (float)rh.y, 7.0f, 7.0f);
+        shape->fill(255, 255, 255, 255);
+        shape->strokeWidth(1.0f);
+        shape->strokeFill(0x10, 0x10, 0x14, 255);
+        canvas->add(shape);
+    }
+
+    // Center crosshair (dark)
+    double cx = (c0.x + c1.x + c2.x + c3.x) * 0.25;
+    double cy = (c0.y + c1.y + c2.y + c3.y) * 0.25;
+    auto *ch1 = tvg::Shape::gen();
+    ch1->appendRect((float)cx - 8.0f, (float)cy - 0.75f, 16.0f, 1.5f, 0.0f, 0.0f);
+    auto *ch2 = tvg::Shape::gen();
+    ch2->appendRect((float)cx - 0.75f, (float)cy - 8.0f, 1.5f, 16.0f, 0.0f, 0.0f);
+    ch1->fill(0x10, 0x10, 0x14, 255);
+    ch2->fill(0x10, 0x10, 0x14, 255);
+    canvas->add(ch1);
+    canvas->add(ch2);
+}
+
 void Renderer::frame()
 {
     ensureCanvas();
@@ -324,6 +391,15 @@ void Renderer::frame()
                 shape->strokeWidth(1.0f);
                 shape->strokeFill(0x10, 0x10, 0x14, 255);
                 canvas->add(shape);
+            }
+        }
+    }
+
+    // ---- node tool overlay (only while the node tool is active) -------------
+    if (toolId == 2) {
+        if (auto *nt = dynamic_cast<Inkscape::UI::Tools::NodeTool *>(tool)) {
+            if (SPRect *r = nt->getRect()) {
+                drawNodeOverlay(canvas, r);
             }
         }
     }

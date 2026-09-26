@@ -179,6 +179,25 @@ public:
     }
 
     bool isEmpty() const { return width.computed == 0 || height.computed == 0; }
+
+    // ---- Node Tool helpers (Option 1: shim over rect) ------------------
+    // Node indices: 0=TL, 1=TR, 2=BR, 3=BL (corners of localRect)
+    // Handle indices (scale): 0=TL, 1=T, 2=TR, 3=R, 4=BR, 5=B, 6=BL, 7=L
+    // Handle indices (rotate): 8=TL, 9=TR, 10=BR, 11=BL (28px diagonal out)
+    // Returns -1 if none within tolerance.
+    int nodeAt(double x, double y, double tol = 8.0) const;
+    int handleAt(double x, double y, double tol = 8.0) const;
+    // Move a corner node (in document space). Updates local x/y/w/h to keep
+    // rect valid; other corners adjust accordingly.
+    void moveNode(int idx, Geom::Point pos);
+    // Move a scale handle (delegates to SelTrans-style math; kept here for
+    // NodeTool to call directly without SelTrans when only editing corners).
+    void moveHandle(int idx, Geom::Point pos);
+    // Convert to SPPath (for when drag breaks rectangularity). Returns new
+    // SPPath with same geometry+transform; caller must register it.
+    // NOT IMPLEMENTED in Option 1 — placeholder for escalation trigger.
+    // class SPPath; // fwd
+    // SPPath *toPath() const;
 };
 
 // Weak-pointer surface used by the tool (SPWeakPtr<SPRect> rect).

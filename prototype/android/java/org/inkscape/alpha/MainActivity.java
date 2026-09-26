@@ -34,6 +34,7 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
 
     private static final int TOOL_SELECT = 0; // default tool
     private static final int TOOL_RECT = 1;
+    private static final int TOOL_NODE = 2;   // Node tool (Option 1: edit rect corners)
 
     private GLSurfaceView canvas;
     private Toolbox toolbox;
@@ -61,10 +62,11 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
         // notch ("el botón está muy arriba" lesson 😄).
         root.setFitsSystemWindows(true);
 
-        // Reusable tool strip: Select (default) + Rect.
+        // Reusable tool strip: Select (default) + Rect + Node.
         toolbox = new Toolbox(this);
         toolbox.addTool(TOOL_SELECT, "\u2316  Selector");
         toolbox.addTool(TOOL_RECT, "\u25A1  Rect\u00E1ngulo");
+        toolbox.addTool(TOOL_NODE, "\u25CF  Nodos");
         toolbox.select(TOOL_SELECT);
         root.addView(toolbox, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));

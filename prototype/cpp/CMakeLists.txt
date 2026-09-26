@@ -14,6 +14,7 @@ add_library(inkalpha SHARED
     renderer.cpp
     tool/rect_tool_port.cpp
     tool/select_tool_port.cpp
+    tool/node_tool_port.cpp
     sham/tool_base.cpp
     sham/snap.cpp
     sham/desktop.cpp
