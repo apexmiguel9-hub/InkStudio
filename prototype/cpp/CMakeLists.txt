@@ -19,6 +19,7 @@ add_library(inkalpha SHARED
     sham/snap.cpp
     sham/desktop.cpp
     sham/seltrans.cpp
+    sham/sp_rect.cpp
 )
 
 target_include_directories(inkalpha PRIVATE
