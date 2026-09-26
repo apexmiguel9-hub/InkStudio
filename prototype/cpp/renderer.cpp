@@ -87,14 +87,20 @@ void Renderer::frame()
     EGLSurface srf = eglGetCurrentSurface(EGL_DRAW);
     EGLContext ctx = eglGetCurrentContext();
     if (dpy && srf && ctx) {
-        canvas->target(dpy, srf, ctx, 0, (uint32_t)W, (uint32_t)H,
-                       tvg::ColorSpace::ABGR8888);
+        // ABGR8888S is REQUIRED: GlRenderer::target() v1.1.2 returns
+        // NonSupport for any other ColorSpace (observed black canvas when
+        // ABGR8888 was passed).
+        tvg::Result rt = canvas->target(dpy, srf, ctx, 0, (uint32_t)W,
+                                        (uint32_t)H,
+                                        tvg::ColorSpace::ABGR8888S);
 #ifndef NDEBUG
+        if (rt != tvg::Result::Success)
+            LOGI("frame: target=%d", (int)rt);
+#endif
     } else {
         // Only reachable if eglGetCurrent* fails (no current EGL context)
         LOGI("frame: no current EGL handles (dpy=%d srf=%d ctx=%d)",
              dpy != nullptr, srf != nullptr, ctx != nullptr);
-#endif
     }
 
     canvas->viewport(0, 0, W, H);
