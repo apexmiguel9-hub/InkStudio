@@ -87,6 +87,12 @@ bool NodeTool::root_handler(CanvasEvent const &event)
             Geom::Point pos_w = event.pos;
             Geom::Point pos_dt = _desktop->w2d(pos_w);
 
+            // Refresh rect from current selection (user may have switched tools)
+            SPItem *sel_item = _desktop->getSelection()->singleItem();
+            if (sel_item && is<SPRect>(sel_item)) {
+                rect = cast<SPRect>(sel_item);
+            }
+
             // If a rect is selected, test its nodes/handles
             SPRect *r = rect.get();
             if (r && !r->isEmpty()) {
