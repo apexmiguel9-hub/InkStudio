@@ -67,6 +67,24 @@ if [ ! -e "$RIVE_SRC/premake5.lua" ]; then
   ln -s premake5_v2.lua "$RIVE_SRC/premake5.lua"
 fi
 
+# Pre-seed premake5 so build_rive.sh SKIPS its source bootstrap. On Linux it
+# would `git clone premake-core && make -f Bootstrap.mak linux` otherwise,
+# which needs libuuid-dev (absent on the runner: os_uuid.c fails on
+# uuid/uuid.h) and costs ~2 min per run. The official linux binary for the
+# pinned tag goes to the exact path build_rive.sh checks:
+#   build/dependencies/premake-core/bin/<tag>_release/premake5
+# Export RIVE_PREMAKE_TAG so the seed path and build_rive.sh can't diverge.
+export RIVE_PREMAKE_TAG="${RIVE_PREMAKE_TAG:-v5.0.0-beta7}"
+PREMAKE_INSTALL_DIR="$RIVE_SRC/build/dependencies/premake-core/bin/${RIVE_PREMAKE_TAG}_release"
+if [ ! -x "$PREMAKE_INSTALL_DIR/premake5" ]; then
+  echo "== Pre-seeding premake5 (${RIVE_PREMAKE_TAG} linux binary)"
+  mkdir -p "$PREMAKE_INSTALL_DIR"
+  curl -fsSL -o /tmp/premake5.tar.gz \
+    "https://github.com/premake/premake-core/releases/download/${RIVE_PREMAKE_TAG}/premake-${RIVE_PREMAKE_TAG#v}-linux.tar.gz"
+  tar -xzf /tmp/premake5.tar.gz -C "$PREMAKE_INSTALL_DIR"
+  chmod +x "$PREMAKE_INSTALL_DIR/premake5"
+fi
+
 export ANDROID_NDK="$NDK"
 cd "$RIVE_SRC"
 # --with_vulkan only (no text/layout/canvas: keeps the lib small and is all
