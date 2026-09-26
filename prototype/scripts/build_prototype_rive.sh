@@ -124,7 +124,15 @@ echo "== Shader make verified no-op (dry-run clean)"
 # build_rive.sh would write for THIS invocation (ninja/release/android/arm64
 # + --with_vulkan + --for_android); a mismatch fails loudly with both strings
 # printed, so keep in sync if the invocation changes.
-printf '%s\n' "ninja --config=release --out=out/android_arm64_release --with_vulkan --for_android --arch=arm64" \
+#
+# --no-rive-decoders: our link (CI run #9) hit undefined symbols
+# rive::DecodeKtx2 / rive::Bitmap::decode / Bitmap::pixelFormat — they come
+# ONLY from render_context.cpp's #ifdef RIVE_KTX2 / #ifdef RIVE_DECODERS
+# image-decode paths (we draw paths, never decode images). Without the flag
+# premake defines RIVE_DECODERS+RIVE_KTX2 by default and the pls renderer
+# references the decoders lib, which we don't build/link. The flag compiles
+# those paths out (vulkan impl's platformDecodeImageTexture returns nullptr).
+printf '%s\n' "ninja --config=release --out=out/android_arm64_release --with_vulkan --no-rive-decoders --for_android --arch=arm64" \
   > "$RIVE_BUILD_DIR/.rive_premake_args"
 
 export ANDROID_NDK="$NDK"
