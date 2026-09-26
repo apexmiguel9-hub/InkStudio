@@ -138,8 +138,14 @@ printf '%s\n' "ninja --config=release --out=out/android_arm64_release --with_vul
 export ANDROID_NDK="$NDK"
 cd "$RIVE_SRC/renderer"
 # --with_vulkan only (no text/layout/canvas: keeps the lib small and is all
-# the low-level RiveRenderer path needs). ninja targets: rive + rive_pls_renderer.
-RIVE_PREMAKE_ARGS="--with_vulkan" bash ../build/build_rive.sh ninja release android arm64 \
+# the low-level RiveRenderer path needs) + --no-rive-decoders (image decode is
+# dead code for a paths-only canvas; without it the pls renderer references
+# the rive_decoders chain, which we don't link — see link-failure run #9).
+# The env var BOTH feeds premake AND is what build_rive.sh compares against
+# .rive_premake_args (line ~364): the two must stay identical to the seed
+# above, or the build aborts with "arguments do not match previous".
+# ninja targets: rive + rive_pls_renderer.
+RIVE_PREMAKE_ARGS="--with_vulkan --no-rive-decoders" bash ../build/build_rive.sh ninja release android arm64 \
   -- rive rive_pls_renderer
 cd "$ROOT"
 
