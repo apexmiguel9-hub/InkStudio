@@ -99,6 +99,15 @@ if [ ! -d "$SHADER_OUT" ] || [ -z "$(ls -A "$SHADER_OUT" 2>/dev/null)" ]; then
   find "$SHADER_OUT" -exec touch {} +
 fi
 
+# Our shader seed creates out/android_arm64_release, so build_rive.sh takes its
+# "existing build" branch and compares .rive_premake_args. Replicate the EXACT
+# string build_rive.sh would write for THIS invocation (ninja/release/android/
+# arm64 + --with_vulkan + --for_android); a mismatch fails loudly with both
+# strings printed, so keep in sync if the invocation changes.
+RIVE_OUT_DIR="$RIVE_SRC/out/android_arm64_release"
+printf '%s\n' "ninja --config=release --out=out/android_arm64_release --with_vulkan --for_android --arch=arm64" \
+  > "$RIVE_OUT_DIR/.rive_premake_args"
+
 export ANDROID_NDK="$NDK"
 cd "$RIVE_SRC"
 # --with_vulkan only (no text/layout/canvas: keeps the lib small and is all
