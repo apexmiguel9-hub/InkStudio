@@ -61,10 +61,30 @@ aislado entre toolbar y canvas (lección FASE13: vistas separadas).
   (queda en el registry). `cancel()` (Escape/0-size) lo borra.
 - ThorVG **v1.1.2 fijado** (no "latest"): API verificada contra su
   `inc/thorvg.h` (add/remove, GlCanvas::target EGL, strokeWidth, init(0)).
-- Build CI: Thames nada local — workflow `build-inkalpha` (dispatch + push a
+- Build CI: todo en CI, nada local — workflow `build-inkalpha` (dispatch + push a
   la rama), NDK r27, meson cross arm64 (engines cpu,gl), CMake, empaquetado
   manual sin Gradle (aapt2 → javac → d8 → zipalign → apksigner debug).
 - Gesture isolation: toolbar y canvas son vistas separadas.
+
+### Iteraciones reales de CI (calibración de estimación)
+
+| Run | Fallo | Fix | Coste |
+|---|---|---|---|
+| 1 (dispatch 00:28Z) | App Android SDK setup: `android-actions/setup-android@v3` (su `sdkmanager --licenses` interno sale 1 en cmdline-tools 16) | Quitada la action; SDK preinstalado del runner + sdkmanager best-effort; script descubre build-tools/platforms/NDK en vez de rutas fijas | ~5 min |
+| 2 (push 00:32Z) | `libthorvg.a not produced`: meson genera `libthorvg-<vmaj>.a` | `find -name 'libthorvg*.a'` | ~3 min |
+| 3 (push 00:33Z) | **VERDE** — APK `inkalpha-debug.apk` (1.86 MB) con `libinkalpha.so` arm64 (5 funciones JNI verificadas con readelf) | — | ~2.5 min |
+
+Total CI real hasta APK instalable: **~7 min en 3 iteraciones**. Bugs de
+pipeline detectados y corregidos: 2 (setup-android deprecated/roto, nombre de
+lib meson). El bug que se evitó de diseño: `-Dextra=opengl_es` obligatorio en
+ThorVG (default compila desktop GL — 100% roto en drivers Android).
+
+### Validación del APK (verificada, no asumida)
+
+- Estructura: AndroidManifest binario, classes.dex, `lib/arm64-v8a/libinkalpha.so`
+  (6.3 MB, ThorVG estático dentro), bloque firma v1 ✓.
+- `.so`: ELF64 AArch64 DYN, exports `Java_org_inkscape_alpha_MainActivity_nativeInit/Resize/Frame/Touch/SetTool` ✓.
+- Pendiente de verificar: comportamiento en dispositivo g56 (instalar y dibujar).
 
 ### Validación local (sin NDK)
 
