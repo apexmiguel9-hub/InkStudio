@@ -30,6 +30,7 @@ private:
     int grabbed_node = -1;           // 0-3 = corner nodes
     int grabbed_handle = -1;         // 0-7 scale, 8-11 rotate
     Geom::Point grab_pos;            // document-space grab position
+    Geom::Point center;              // drag origin center (for body drag)
 
     void grabNode(SPRect *r, int idx, Geom::Point pos);
     void grabHandle(SPRect *r, int idx, Geom::Point pos);
