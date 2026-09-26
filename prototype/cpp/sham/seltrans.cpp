@@ -96,6 +96,17 @@ void SelTrans::snapshot()
     _g.center0 = center();
 }
 
+// Seed the continuous-rotation bookkeeping from the grab point. Without this
+// a rotate drag that crosses the bbox center would flip the angle by PI and
+// the box would "turn over like a page"; accumulating the smallest per-move
+// angle keeps the rotation continuous through the center.
+void SelTrans::initRotateState()
+{
+    _g.last_ang = std::atan2(_g.grab_pos.y - _g.center0.y,
+                             _g.grab_pos.x - _g.center0.x);
+    _g.rot_accum = 0.0;
+}
+
 // ---- select-tool protocol ----------------------------------------------
 
 void SelTrans::increaseState()
@@ -130,6 +141,7 @@ void SelTrans::grab(Geom::Point const &p, double, double, bool, bool translating
     _grabbed = true;
     _g.grab_pos = p;
     snapshot();
+    initRotateState();
 }
 
 bool SelTrans::moveTo(Geom::Point const &xy, unsigned)
@@ -213,6 +225,7 @@ bool SelTrans::tryGrabHandle(Geom::Point const &p)
     }
     double rad = handleRadius();
     Handle best = Handle::NONE;
+    Geom::Point best_pos;
     double best_d = rad * rad; // within the touch radius
     for (auto const &hp : handlePositions()) {
         double dx = hp.pos.x - p.x;
@@ -221,14 +234,20 @@ bool SelTrans::tryGrabHandle(Geom::Point const &p)
         if (d2 <= best_d) {
             best_d = d2;
             best = hp.id;
+            best_pos = hp.pos;
         }
     }
     if (best == Handle::NONE) {
         return false;
     }
     _drag_handle = best;
-    _g.grab_pos = p;
+    // Anchor the drag to the handle's exact center, not the raw finger point:
+    // on touch the finger can land up to handleRadius() away from the visual
+    // handle, and using the finger point would leave the resized box parked
+    // off-center from the finger for the whole drag.
+    _g.grab_pos = best_pos;
     snapshot();
+    initRotateState();
     return true;
 }
 
@@ -310,11 +329,24 @@ bool SelTrans::moveHandle(Geom::Point const &p)
 
     Geom::Xform op;
     if (rotate) {
+        // Continuous rotation: accumulate the smallest per-move angle instead
+        // of an absolute atan2 against the grab point, so crossing the bbox
+        // center spins smoothly instead of flipping the box by PI.
         Geom::Point c = _g.center0;
-        double a0 = std::atan2(_g.grab_pos.y - c.y, _g.grab_pos.x - c.x);
-        double a1 = std::atan2(p.y - c.y, p.x - c.x);
-        op = Geom::Xform::around(c, Geom::Xform::rotate(a1 - a0));
+        double ang = std::atan2(p.y - c.y, p.x - c.x);
+        double d = ang - _g.last_ang;
+        if (d > M_PI) d -= 2.0 * M_PI;
+        if (d < -M_PI) d += 2.0 * M_PI;
+        _g.rot_accum += d;
+        _g.last_ang = ang;
+        op = Geom::Xform::around(c, Geom::Xform::rotate(_g.rot_accum));
     } else {
+        // No mirrors on plain touch drag: clamp the scale factors positive so
+        // dragging a handle past its opposite anchor never flips the box
+        // ("se abre como una hoja"). Flipping stays a keyboard-modifier
+        // affair in Inkscape.
+        fx = std::max(fx, 1e-3);
+        fy = std::max(fy, 1e-3);
         op = Geom::Xform::around(anchor, Geom::Xform::scale(fx, fy));
     }
 

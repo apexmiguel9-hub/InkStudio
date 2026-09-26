@@ -213,6 +213,7 @@ static bool isIdentity(Geom::Xform const &xf)
 void Renderer::frame()
 {
     ensureCanvas();
+    ensureTool(); // first frame has seen no touch yet — tool must exist
     if (!glReady || !tool || W <= 0 || H <= 0) return;
 
     // GlCanvas requires target() before rendering: without it update()/draw()

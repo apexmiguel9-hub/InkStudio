@@ -102,9 +102,12 @@ private:
         Geom::Rect bbox0;      // selection bbox at grab time
         Geom::Point grab_pos;  // where the drag started (doc space)
         Geom::Point center0;   // rotation center at grab time
+        double last_ang = 0.0; // finger angle around center0 (rotate drag)
+        double rot_accum = 0.0; // accumulated rotation since grab (continuous)
     };
 
     void snapshot();
+    void initRotateState(); // seed last_ang/rot_accum from grab_pos vs center0
     std::vector<SPRect *> selectedRects() const;
 
     SPDesktop *_desktop;
