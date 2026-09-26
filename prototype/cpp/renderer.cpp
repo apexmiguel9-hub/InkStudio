@@ -339,7 +339,15 @@ void Renderer::frame()
     }
 
     tvg::Result r1 = canvas->update();
-    tvg::Result r2 = canvas->draw(false);
+    // draw(true): clears the target buffer before drawing (Canvas::draw, thorvg.h
+    // v1.1.2). Without the clear, the GL blit only overwrites the updated region
+    // and the previous frame's pixels survive outside it — dragging/scaling an
+    // item left ghost silhouettes of the OLD geometry (the "detached box" look).
+    // Our scene is fully opaque (background rect covers the viewport), so the
+    // extra clear is invisible when nothing moved and corrects stale pixels
+    // otherwise. LVGL-style note: skip is valid only for full-cover scenes with
+    // no animation; we rely on it being precise now.
+    tvg::Result r2 = canvas->draw(true);
     tvg::Result r3 = canvas->sync();
     if (r1 != tvg::Result::Success || r2 != tvg::Result::Success ||
         r3 != tvg::Result::Success) {
