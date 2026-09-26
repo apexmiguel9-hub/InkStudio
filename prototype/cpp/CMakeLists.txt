@@ -80,9 +80,12 @@ target_include_directories(inkalpha PRIVATE
 
 # Same defines the rive premake sets when building with --with_vulkan
 # (renderer/premake5_pls_renderer.lua): load all Vulkan entry points
-# dynamically via the instance proc-addr (VK_NO_PROTOTYPES).
+# dynamically via the instance proc-addr (VK_NO_PROTOTYPES), and mark the
+# Android platform so rive_vk_bootstrap's logging.hpp pulls <android/log.h>
+# (otherwise LOG_ERROR_LINE expands with undeclared ANDROID_LOG_ERROR).
 target_compile_definitions(inkalpha PRIVATE
     RIVE_VULKAN
+    RIVE_ANDROID
     VK_NO_PROTOTYPES
     VMA_STATIC_VULKAN_FUNCTIONS=0
     VMA_DYNAMIC_VULKAN_FUNCTIONS=1
