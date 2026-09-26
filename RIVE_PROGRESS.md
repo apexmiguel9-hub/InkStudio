@@ -34,6 +34,7 @@ píxeles en el g56, fluidez al tacto) + recomendación de migrar o quedarse.
 | Fix: NDK r27c directo de dl.google.com en CI + descubrimiento blindado | ~15 min | `|| true` en substituciones; checks explícitos con mensaje + exit 1 |
 | CI run #3 (falla 82s): premake5 bootstrap | ~10 min | `src/host/os_uuid.c` fatal: `uuid/uuid.h` no está (falta libuuid-dev en el runner); build_rive.sh compila premake desde fuente en Linux |
 | Fix: pre-seed binario premake5 linux (v5.0.0-beta7) en el path exacto que build_rive.sh chequea + `export RIVE_PREMAKE_TAG` | ~15 min | sin apt ni clone+make recursivo por run |
+| SPIR-V vendored implementado: generado en host Debian-arm64 (glslang 15.2.0 + spirv-opt + ply 3.11; SPIR-V es arch-independiente) + seed+touch en CI antes de premake para que el make de shaders sea no-op | ~25 min | evita glslang en el runner; corpus 418 files/12MB casa con el tag pinned; README reproducible |
 | **CI real (rive build)** | running… | NDK r27c OK + premake seeded + clone premake-ninja + gen premake + shaders + compile arm64 rive/rive_pls_renderer |
 | Verificación g56 (pendiente) | — | pixeles BPP=4 + batería draw→select→move→scale→rotate |
 | **TOTAL hasta APK** | ~2.5h + CI | vs ThorVG alpha1 ~3.5h (CI ~7 min/3 runs) |

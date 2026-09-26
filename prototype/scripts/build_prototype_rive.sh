@@ -85,6 +85,20 @@ if [ ! -x "$PREMAKE_INSTALL_DIR/premake5" ]; then
   chmod +x "$PREMAKE_INSTALL_DIR/premake5"
 fi
 
+# Seed the vendored PLS shader corpus BEFORE premake runs: premake's shader
+# step (`make -C src/shaders ... spirv`) needs glslangValidator + spirv-opt,
+# which are NOT on the runner. SPIR-V is arch-independent, the corpus matches
+# the pinned tag (prototype/vendored/rive_shaders/README.md), and touching
+# everything makes the mtime-based Makefile see all targets up to date.
+# OUT dir == RIVE_BUILD_OUT/include/generated/shaders (out/android_arm64_release).
+SHADER_OUT="$RIVE_SRC/out/android_arm64_release/include/generated/shaders"
+if [ ! -d "$SHADER_OUT" ] || [ -z "$(ls -A "$SHADER_OUT" 2>/dev/null)" ]; then
+  echo "== Seeding vendored PLS shaders -> $SHADER_OUT"
+  mkdir -p "$SHADER_OUT"
+  cp -r "$ROOT/vendored/rive_shaders/." "$SHADER_OUT/"
+  find "$SHADER_OUT" -exec touch {} +
+fi
+
 export ANDROID_NDK="$NDK"
 cd "$RIVE_SRC"
 # --with_vulkan only (no text/layout/canvas: keeps the lib small and is all

@@ -1,0 +1,153 @@
+#pragma once
+
+#include "constants.glsl.exports.h"
+
+namespace rive {
+namespace gpu {
+namespace glsl {
+const char constants[] = R"===(#define ag float(2048)
+#define Nc 11
+#define oa 16u
+#define pa float(512)
+#define vc float(0.001953125)
+#define qa float(3)
+#define xc 0
+#define yc 1
+#define Oc 3u
+#define bg (Oc+1u)
+#define cg float(1.0)
+#define Pc 8
+#define Qc 0xffu
+#define uc 0x80000000u
+#define wc 0x40000000u
+#define ba 0x20000000u
+#define Gf (uc|wc|ba)
+#define Rc (1u<<31u)
+#define dg (1u<<29u)
+#define f4 (7u<<26u)
+#define eg (5u<<26u)
+#define fg (4u<<26u)
+#define x8 (2u<<26u)
+#define y8 (1u<<26u)
+#define z8 (1u<<25u)
+#define gg (1u<<24u)
+#define K3 (1u<<23u)
+#define ra (1u<<22u)
+#define Sc (1u<<21u)
+#define A8 (1u<<20u)
+#define Tc (1u<<19u)
+#define Uc 0xffffu
+#define hg .0
+#define B8 0
+#define Vc 1
+#define Wc 2
+#define B8 0
+#define Vc 1
+#define Wc 2
+#define Z7 0u
+#define Vb 1u
+#define Xb 2u
+#define of 0x100u
+#define K9 0x200u
+#define pf 0x400u
+#define ig 0x800u
+#define h3 0
+#define h5 1
+#define K4 0
+#define Xc 1
+#define Yc 2
+#define Qb 3
+#define Rb 4
+#define Zc 5
+#define sa 6
+#define jg 7
+#define ad 8
+#define h7 9
+#define bd 10
+#define a4 11
+#define kg 12
+#define e6 13
+#define lg 13
+#define R1(g) (3+g)
+#define w3 2
+#define mg 3
+#define G2 0
+#define X2 1
+#define f6 2
+#define J6 3
+#define ta 2
+#define v9 2
+#define w9 3
+#define x9 4
+#define y9 5
+#define z9 6
+#define A9 7
+#define B9 8
+#define cd 8
+#define cf 9
+#define df 10
+#define ef 11
+#define Lb 12
+#define ng Lb
+#define og cd
+#define Nf 1023u
+#define p9 6.2e-5
+#define B4 0u
+#define Ne 1u
+#define Oe 2u
+#define Pe 3u
+#define Qe 4u
+#define Re 5u
+#define Te 6u
+#define Ue 7u
+#define Ve 8u
+#define We 9u
+#define Xe 10u
+#define Me 11u
+#define Ye 12u
+#define Ze 13u
+#define af 14u
+#define bf 15u
+#define Yf 8u
+#define I9 float(2048)
+#define Sb float(0.00048828125)
+#define J9 float(1<<16)
+#define P9 (1u<<16)
+#define U5 17u
+#define f8 0x1ffffu
+#define pg float(1024)
+#define ua float(0.0009765625)
+#define va 19u
+#define n5 (1u<<(va-1u))
+#define wa ((1u<<va)-1u)
+#define i7 (1u<<va)
+#define qg 0
+#define rg 1
+#define sg 2
+#define tg 3
+#define ug 4
+#define vg 5
+#define wg 6
+#define xg 7
+#define yg 8
+#define zg 9
+#define Ag 10
+#define Bg 11
+#define Cg 12
+#define Dg 13
+#define Eg 14
+#define Fg 15
+#define dd 65536.
+#define xa 8.
+#define ya 32u
+#define g6 5u
+#define E3 8u
+#ifdef Gg
+#if Gg>=201703
+jj(ya==1u<<g6);
+#endif
+#endif
+)===";
+} // namespace glsl
+} // namespace gpu
+} // namespace rive
