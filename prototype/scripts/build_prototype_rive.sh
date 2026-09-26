@@ -61,11 +61,10 @@ if [ ! -d "$RIVE_SRC/.git" ]; then
   git clone --depth 1 --branch "$RIVE_TAG" https://github.com/rive-app/rive-runtime "$RIVE_SRC"
 fi
 
-# premake looks for premake5.lua; the repo ships premake5_v2.lua as the main
-# project (build_rive.sh is invoked with cwd = repo root).
-if [ ! -e "$RIVE_SRC/premake5.lua" ]; then
-  ln -s premake5_v2.lua "$RIVE_SRC/premake5.lua"
-fi
+# premake must run from renderer/: renderer/premake5.lua is the entry that
+# registers --with_vulkan and defines the rive_pls_renderer project (it dofiles
+# premake5_pls_renderer.lua FIRST, then the runtime-core premake5_v2.lua).
+# The runtime-root premake5_v2.lua alone only defines the `rive` project.
 
 # Pre-seed premake5 so build_rive.sh SKIPS its source bootstrap. On Linux it
 # would `git clone premake-core && make -f Bootstrap.mak linux` otherwise,
@@ -90,8 +89,10 @@ fi
 # which are NOT on the runner. SPIR-V is arch-independent, the corpus matches
 # the pinned tag (prototype/vendored/rive_shaders/README.md), and touching
 # everything makes the mtime-based Makefile see all targets up to date.
-# OUT dir == RIVE_BUILD_OUT/include/generated/shaders (out/android_arm64_release).
-SHADER_OUT="$RIVE_SRC/out/android_arm64_release/include/generated/shaders"
+# OUT dir == RIVE_BUILD_OUT/include/generated/shaders; premake runs from
+# renderer/, so the out dir is renderer/out/android_arm64_release.
+RIVE_BUILD_DIR="$RIVE_SRC/renderer/out/android_arm64_release"
+SHADER_OUT="$RIVE_BUILD_DIR/include/generated/shaders"
 if [ ! -d "$SHADER_OUT" ] || [ -z "$(ls -A "$SHADER_OUT" 2>/dev/null)" ]; then
   echo "== Seeding vendored PLS shaders -> $SHADER_OUT"
   mkdir -p "$SHADER_OUT"
@@ -99,24 +100,23 @@ if [ ! -d "$SHADER_OUT" ] || [ -z "$(ls -A "$SHADER_OUT" 2>/dev/null)" ]; then
   find "$SHADER_OUT" -exec touch {} +
 fi
 
-# Our shader seed creates out/android_arm64_release, so build_rive.sh takes its
-# "existing build" branch and compares .rive_premake_args. Replicate the EXACT
-# string build_rive.sh would write for THIS invocation (ninja/release/android/
-# arm64 + --with_vulkan + --for_android); a mismatch fails loudly with both
-# strings printed, so keep in sync if the invocation changes.
-RIVE_OUT_DIR="$RIVE_SRC/out/android_arm64_release"
+# Our shader seed creates the out dir, so build_rive.sh takes its "existing
+# build" branch and compares .rive_premake_args. Replicate the EXACT string
+# build_rive.sh would write for THIS invocation (ninja/release/android/arm64
+# + --with_vulkan + --for_android); a mismatch fails loudly with both strings
+# printed, so keep in sync if the invocation changes.
 printf '%s\n' "ninja --config=release --out=out/android_arm64_release --with_vulkan --for_android --arch=arm64" \
-  > "$RIVE_OUT_DIR/.rive_premake_args"
+  > "$RIVE_BUILD_DIR/.rive_premake_args"
 
 export ANDROID_NDK="$NDK"
-cd "$RIVE_SRC"
+cd "$RIVE_SRC/renderer"
 # --with_vulkan only (no text/layout/canvas: keeps the lib small and is all
 # the low-level RiveRenderer path needs). ninja targets: rive + rive_pls_renderer.
-RIVE_PREMAKE_ARGS="--with_vulkan" bash build/build_rive.sh ninja release android arm64 \
+RIVE_PREMAKE_ARGS="--with_vulkan" bash ../build/build_rive.sh ninja release android arm64 \
   -- rive rive_pls_renderer
 cd "$ROOT"
 
-RIVE_BUILD="$RIVE_SRC/out/android_arm64_release"
+RIVE_BUILD="$RIVE_BUILD_DIR"
 RIVE_LIB="$(find "$RIVE_BUILD" -name 'librive.a' | head -1)"
 RIVE_PLS_LIB="$(find "$RIVE_BUILD" -name 'librive_pls_renderer.a' | head -1)"
 [ -n "$RIVE_LIB" ] || { echo "ERROR: librive.a not produced under $RIVE_BUILD"; exit 1; }
