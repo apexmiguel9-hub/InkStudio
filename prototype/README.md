@@ -42,7 +42,8 @@ compila todo desde cero en ubuntu-latest:
 
 1. **ThorVG** **fijado al tag `v1.1.2`** (API confirmada contra su `inc/thorvg.h`;
    `renderer.cpp` está escrito contra esa API), cross para arm64 con el NDK
-   (meson, `-Dengines=cpu,gl -Ddefault_library=static`).
+   (meson, `-Dengines=cpu,gl -Dextra=opengl_es -Dloaders= -Ddefault_library=static`;
+   `extra=opengl_es` es obligatorio: sin él ThorVG compila la variante desktop GL).
 2. **libinkalpha.so** vía CMake + `android.toolchain.cmake` (arm64-v8a, minSdk 26).
 3. **APK** empaquetado manual (sin Gradle): aapt2 link → javac → d8 → zip de
    `classes.dex` + `.so` → zipalign → apksigner (keystore debug generado).

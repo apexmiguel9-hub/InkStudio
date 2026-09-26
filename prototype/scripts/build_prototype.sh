@@ -15,9 +15,17 @@ WORK="$ROOT/build"
 SDK="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
 [ -n "$SDK" ] || { echo "ERROR: ANDROID_SDK_ROOT/ANDROID_HOME not set"; exit 1; }
 
-BT="$SDK/build-tools/35.0.0"
-PLATFORM_JAR="$SDK/platforms/android-35/android.jar"
-NDK="$(ls -d "$SDK"/ndk/* | tail -1)"
+BT="$(ls -d "$SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
+BT="${BT%/}"
+PLATFORM_JAR="$(ls "$SDK"/platforms/android-*/android.jar 2>/dev/null | sort -V | tail -1)"
+NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
+
+[ -x "$BT/aapt2" ] || { echo "ERROR: no usable build-tools under $SDK/build-tools"; exit 1; }
+[ -n "$PLATFORM_JAR" ] || { echo "ERROR: no android.jar under $SDK/platforms"; exit 1; }
+[ -n "$NDK" ] || { echo "ERROR: no NDK under $SDK/ndk (workflow sdkmanager step should have installed it)"; exit 1; }
+echo "== BT: $BT"
+echo "== platform jar: $PLATFORM_JAR"
+echo "== NDK: $NDK"
 TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 TRIPLE="aarch64-linux-android"
 SYSROOT="$TOOLCHAIN/sysroot"
@@ -60,9 +68,16 @@ EOF
 export NDK_SYSROOT="$SYSROOT"
 export NDK_TRIPLE="$TRIPLE"
 
+# extra=opengl_es is REQUIRED: the meson default is ['lottie_exp','openmp'],
+# which would build the DESKTOP GL variant (THORVG_GL_TARGET_GL=1) with
+# desktop-only symbols -> broken on Android GLES drivers. opengl_es sets
+# THORVG_GL_TARGET_GLES=1: ThorVG then dlopens("libGLESv2.so") and resolves
+# entry points via dlsym at runtime (no link-time GL libs needed).
 meson setup "$WORK/thorvg-build" "$TVG_SRC" \
   --cross-file "$WORK/cross-android-arm64.txt" \
   -Dengines=cpu,gl \
+  -Dextra=opengl_es \
+  -Dloaders= \
   -Ddefault_library=static \
   --prefix "$WORK/thorvg-install"
 meson install -C "$WORK/thorvg-build"

@@ -31,16 +31,23 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install SDK packages (platform, build-tools, NDK)
+      # The ubuntu runner image preinstalls the Android SDK (build-tools,
+      # platforms, NDK) at $ANDROID_HOME. sdkmanager is only a best-effort
+      # safety net for missing pieces (setup-android@v3 is broken on current
+      # cmdline-tools: its internal `sdkmanager --licenses` exits 1).
+      - name: Fill missing SDK bits (best-effort)
         run: |
-          sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager --install \
-            "platforms;android-35" \
-            "build-tools;35.0.0" \
-            "ndk;27.2.12479018"
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "SDK root: $SDK"
+          ls "$SDK/build-tools" 2>/dev/null; ls "$SDK/platforms" 2>/dev/null; ls "$SDK/ndk" 2>/dev/null
+          need=""
+          [ -d "$SDK/build-tools" ] || need="$need build-tools;35.0.0"
+          [ -d "$SDK/platforms" ] || need="$need platforms;android-35"
+          [ -d "$SDK/ndk" ] || need="$need ndk;27.2.12479018"
+          if [ -n "$need" ]; then
+            yes | sdkmanager --licenses >/dev/null 2>&1 || true
+            yes | sdkmanager --install $need || echo "sdkmanager failed; relying on preinstalled bits"
+          fi
 
       - name: meson + ninja
         run: python3 -m pip install --user meson ninja
