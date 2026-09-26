@@ -1,17 +1,22 @@
 name: build-inkalpha
 
-# Builds the InkAlpha prototype APK (ThorVG GL canvas + ported Inkscape
-# rect tool) — see prototype/README.md.
+# Builds the InkAlpha prototype APK — RIVE EXPERIMENT branch:
+# Rive low-level Vulkan renderer (rive::Renderer + RenderPath over an
+# ANativeWindow swapchain) + ported Inkscape rect/select tools.
+# See prototype/README.md.
 #
 # Triggers:
 #   - manual (workflow_dispatch)
-#   - pushes to the alpha branch touching the prototype
+#   - pushes to THIS branch (alpha-rive-experiment) touching the prototype
+#
+# NOTE: the alpha-thorvg-rect branch keeps the ThorVG build of the same file
+# name; each branch's workflow builds its own variant.
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - alpha-thorvg-rect
+      - alpha-rive-experiment
     paths:
       - 'prototype/**'
       - '.github/workflows/build-inkalpha.yml'
@@ -19,7 +24,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
 
     steps:
       - name: Checkout
@@ -35,6 +40,7 @@ jobs:
       # platforms, NDK) at $ANDROID_HOME. sdkmanager is only a best-effort
       # safety net for missing pieces (setup-android@v3 is broken on current
       # cmdline-tools: its internal `sdkmanager --licenses` exits 1).
+      # Rive REQUIRES exactly NDK r27c = 27.2.12479018.
       - name: Fill missing SDK bits (best-effort)
         run: |
           SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
@@ -43,17 +49,14 @@ jobs:
           need=""
           [ -d "$SDK/build-tools" ] || need="$need build-tools;35.0.0"
           [ -d "$SDK/platforms" ] || need="$need platforms;android-35"
-          [ -d "$SDK/ndk" ] || need="$need ndk;27.2.12479018"
+          [ -d "$SDK/ndk/27.2.12479018" ] || need="$need ndk;27.2.12479018"
           if [ -n "$need" ]; then
             yes | sdkmanager --licenses >/dev/null 2>&1 || true
             yes | sdkmanager --install $need || echo "sdkmanager failed; relying on preinstalled bits"
           fi
 
-      - name: meson + ninja
-        run: python3 -m pip install --user meson ninja
-
-      - name: Build InkAlpha APK
-        run: bash prototype/scripts/build_prototype.sh
+      - name: Build InkAlpha APK (Rive Vulkan)
+        run: bash prototype/scripts/build_prototype_rive.sh
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

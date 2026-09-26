@@ -3,9 +3,10 @@ package org.inkscape.alpha;
 import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
-import android.opengl.GLSurfaceView;
 import android.os.Bundle;
 import android.view.MotionEvent;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
@@ -14,28 +15,25 @@ import android.widget.LinearLayout;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
-
 /**
- * InkAlpha — native canvas prototype (NDK + ThorVG, GL backend).
+ * InkAlpha — native canvas prototype (NDK + Rive low-level Vulkan renderer,
+ * RIVE EXPERIMENT branch).
  *
- * Two tools, both ported from Inkscape's ui/tools (see prototype/cpp/tool/):
- * the Select tool (move + rubberband + scale/rotate handles) and the Rect
- * tool. Rect interaction logic is ported verbatim from rect-tool.cpp; Select
- * is default.
+ * Same two tools as the ThorVG version, both ported from Inkscape's ui/tools
+ * (see prototype/cpp/tool/): the Select tool (move + rubberband + scale/
+ * rotate handles) and the Rect tool.
  *
- * Gesture isolation (FASE13 lesson): the toolbox strip and the canvas are
- * separate views with their own touch targets — a touch that starts on the
- * button never bleeds into the canvas, and leftover strokes on the canvas
- * never reach the toolbar.
+ * Engine note: the canvas is a plain SurfaceView whose android.view.Surface is
+ * handed to native code (nativeSurface) — the native side creates a Vulkan
+ * swapchain directly on the ANativeWindow (no GL, no intermediate layers).
+ * All touch/tool state lives on the native render thread.
  */
-public class MainActivity extends Activity implements GLSurfaceView.Renderer {
+public class MainActivity extends Activity {
 
     private static final int TOOL_SELECT = 0; // default tool
     private static final int TOOL_RECT = 1;
 
-    private GLSurfaceView canvas;
+    private SurfaceView canvas;
     private Toolbox toolbox;
 
     // ---- native -----------------------------------------------------------
@@ -44,6 +42,7 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
     }
 
     private static native void nativeInit();
+    private static native void nativeSurface(android.view.Surface surface); // null = destroyed
     private static native void nativeResize(int w, int h);
     private static native void nativeFrame();
     private static native void nativeTouch(float x, float y, int action); // 0 down 1 move 2 up
@@ -61,7 +60,6 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
         // notch ("el botón está muy arriba" lesson 😄).
         root.setFitsSystemWindows(true);
 
-        // Reusable tool strip: Select (default) + Rect.
         toolbox = new Toolbox(this);
         toolbox.addTool(TOOL_SELECT, "\u2316  Selector");
         toolbox.addTool(TOOL_RECT, "\u25A1  Rect\u00E1ngulo");
@@ -69,10 +67,23 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
         root.addView(toolbox, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        canvas = new GLSurfaceView(this);
-        canvas.setEGLContextClientVersion(2);
-        canvas.setRenderer(this);
-        canvas.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+        canvas = new SurfaceView(this);
+        canvas.getHolder().addCallback(new SurfaceHolder.Callback() {
+            @Override
+            public void surfaceCreated(SurfaceHolder holder) {
+                nativeSurface(holder.getSurface());
+            }
+
+            @Override
+            public void surfaceChanged(SurfaceHolder holder, int format, int w, int h) {
+                nativeResize(w, h);
+            }
+
+            @Override
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                nativeSurface(null);
+            }
+        });
         canvas.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent e) {
@@ -88,19 +99,10 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
                         action = 2;
                         break;
                 }
-                // Snapshot coords now (MotionEvent is recycled after onTouch),
-                // then run the tool state change on the GL thread so it never
-                // races with frame() — same thread owns tool + registry.
-                final float x = e.getX();
-                final float y = e.getY();
-                final int act = action;
-                canvas.queueEvent(new Runnable() {
-                    @Override
-                    public void run() {
-                        nativeTouch(x, y, act);
-                    }
-                });
-                canvas.requestRender();
+                // Snapshot coords now (MotionEvent is recycled after onTouch);
+                // the native side enqueues to the render thread (same-thread
+                // rule as the old GL pipeline: tool+registry live there).
+                nativeTouch(e.getX(), e.getY(), action);
                 return true;
             }
         });
@@ -114,29 +116,8 @@ public class MainActivity extends Activity implements GLSurfaceView.Renderer {
     @Override
     protected void onPause() {
         super.onPause();
-        canvas.onPause();
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        canvas.onResume();
-    }
-
-    // ---- GLSurfaceView.Renderer ------------------------------------------
-    @Override
-    public void onSurfaceCreated(GL10 gl, EGLConfig config) {
-        gl.glClearColor(0.949f, 0.949f, 0.957f, 1f);
-    }
-
-    @Override
-    public void onSurfaceChanged(GL10 gl, int w, int h) {
-        nativeResize(w, h);
-    }
-
-    @Override
-    public void onDrawFrame(GL10 gl) {
-        nativeFrame();
+        // The framework destroys the surface; nativeSurface(null) fires via
+        // the holder callback and tears down the Vulkan swapchain.
     }
 
     // ---- Toolbox (minimal reusable tool strip) ---------------------------
