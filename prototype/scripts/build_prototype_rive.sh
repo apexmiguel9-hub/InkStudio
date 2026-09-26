@@ -29,7 +29,12 @@ NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
 [ -n "$PLATFORM_JAR" ] || { echo "ERROR: no android.jar under $SDK/platforms"; exit 1; }
 [ -n "$NDK" ] || { echo "ERROR: no NDK under $SDK/ndk (workflow sdkmanager step should have installed it)"; exit 1; }
 
-# Rive pins the NDK to r27c (27.2.12479018) — fail loudly on anything else.
+# Rive pins the NDK to r27c (27.2.12479018) — prefer it explicitly (the
+# runner image may also ship newer NDKs; tail -1 would pick the wrong one).
+NDK="$(ls -d "$SDK"/ndk/27.2.12479018 2>/dev/null | head -1)"
+if [ -z "$NDK" ]; then
+  NDK="$(ls -d "$SDK"/ndk/* 2>/dev/null | sort -V | tail -1)"
+fi
 NDK_LONG="$(grep -o 'Pkg.Revision = [0-9.]*' "$NDK/source.properties" 2>/dev/null | awk '{print $3}')"
 if [ "$NDK_LONG" != "27.2.12479018" ]; then
   echo "ERROR: Rive requires NDK 27.2.12479018 (r27c); found: $NDK ($NDK_LONG)"
