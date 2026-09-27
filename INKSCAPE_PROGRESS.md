@@ -370,8 +370,50 @@ demasiado, el log real de fallo ES el hallazgo; se para ahí.
   usuario confirmó). Puente JNI→Ganesh GL estable, dlopen limpio, DT_NEEDED
   mínimo. `alpha-skia-experiment` empujado: a385f12, 9b30305, dd7b86a, 3b2ed01,
   9c2699c, c21b99d, 07e87b7, 84644ec.
-- **Run 16 (36354888579, commit d2f32e8)**: port de las 3 herramientas del
-  prototipo ThorVG (Selector con 8 handles escala + 4 nodos rotación por tap
-  siguiente, Rectángulo persistente, Nodos) al app Skia para comparativa justa;
-  toolbar Java portado (fix: selección por tag de tool id), portrait forzado.
-  [Resultado pendiente de verificación en dispositivo.]
+
+### Port de las 3 herramientas → comparativa justa (runs 16-18, 2026-09-27)
+
+- **Run 16 (36354888579, d2f32e8) FAIL** — el .so enlazó perfecto (28.23 MB
+  sin strip / 5.34 MB con strip, símbolos JNI presentes, DT_NEEDED limpio);
+  `javac` falló: `MainActivity.java:130 non-static method nativeSetTool(int)
+  cannot be referenced from a static context` + `glView` idem (la clase
+  `Toolbox` es estática) → natives `static` + `GLSurfaceView` pasado por ctor.
+- **Run 17 (36355876396, a5dc251b) SUCCESS ~11 min** — **3 herramientas
+  funcionando en el g56**: Selector (selección + mover + redimensionar + 4
+  nodos rotación al tap siguiente + rubberband), Rectángulo (rects
+  persistentes, cada drag crea uno nuevo), Nodos (overlay). Toolbar portado
+  con fix de selección por tag de tool id (el bug "botón equivocado en
+  launch" del prototipo ThorVG NO se reproduce aquí: Selector selected=true).
+  Portrait forzado; `nativeInit OK 1080x2037`.
+- **Feedback del usuario (prueba en dispositivo)**: "funciona casi bien...
+  rotar sirve, crear el rectángulo sirve, deslizar el rectángulo sirve".
+  2 problemas: (1) al **tocar** un nodo sin deslizar, el rect se redimensionaba
+  solo hasta el dedo (falta de offset de agarre + tolerancia); (2) **nodos muy
+  pequeños** (10px). La NodeTool "no hace nada" igual que en ThorVG — el
+  usuario lo marca NO como problema actual.
+- **Run 18 (36357151754, cea5b008) SUCCESS ~12 min — fixes aplicados y
+  VERIFICADOS por el usuario en el g56 ("funciona ya lo probe xd")**:
+  1. Resize SOLO con desliz: offset de agarre (el nodo queda anclado bajo el
+     dedo en el grip) + tolerancia 8px — tocar sin deslizar no cambia nada.
+  2. Nodos más grandes: cuadrados 22px (antes 10px), anillos r=12 (antes 7),
+     hit 26px.
+  3. Mid-edge handles correctos: el borde agarrado sigue al dedo, el opuesto
+     queda fijo (antes el borde derecho quedaba fijo mal mapeado).
+  4. Gate de tolerancia también en rotate (tap con jitter no rota).
+  Logcat real de la sesión del usuario: `rect created 221x198+627x834 n=1`,
+  `rect created 200x254+298x298 n=2`, `tool=2 sel=1` (Nodos), `tool=0 sel=1`.
+
+### Conclusión de la auditoría Skia (para la decisión de motor)
+
+- **Skia m156 corre una app GL completa con las 3 herramientas en el g56**,
+  con las mismas interacciones que el prototipo ThorVG, a coste de build/
+  tamaño: .so strip 5.34 MB vs ThorVG 7.15 MB sin strip (el APK Skia ~2.5 MB
+  vs 2.24 MB). El dlopen/DT_NEEDED mínimo se logra con la allowlist canónica,
+  `-static-libstdc++` y `skia_use_partition_alloc=false`.
+- Sin embargo cada build Skia cuesta ~10-13 min de CI (deps sync ~220-374s +
+  ninja ~330s) frente al build ThorVG directo, y la API m156 es data-oriented
+  (SkPath sin moveTo/lineTo) — distinto mental model para portar código
+  Inkscape. **Decisión de motor: SIN tomar; blockeada por aprobación del
+  usuario (no cambiar el motor sin visto bueno).** ThorVG sigue siendo el
+  motor de canvas final por defecto; Skia queda como experimento verificado
+  para la comparativa justa.
