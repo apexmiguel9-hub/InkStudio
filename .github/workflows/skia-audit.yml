@@ -1,0 +1,154 @@
+name: skia-audit
+
+# Real Skia build audit for Android arm64 on the GitHub Actions runner.
+# Goal: answer with REAL logs/artifacts (not estimates):
+#   1. does `fetch/git-sync-deps` + `gn gen` + `ninja` work for Android on
+#      this CI at all? how long does each step take (timestamps)?
+#   2. how much disk does the checkout + build need?
+#   3. how many real build errors, pasted verbatim?
+#   4. what does libskia.a weigh?
+#
+# Trigger: workflow_dispatch or push to alpha-skia-experiment.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - alpha-skia-experiment
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Environment snapshot
+        run: |
+          echo "== runner arch/mem/disk (before) =="
+          nproc
+          free -h | head -2
+          df -h "$HOME" | tail -1
+          echo "== SDK/NDK =="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+          ls "$ANDROID_HOME"/ndk 2>/dev/null || echo "no NDK under ANDROID_HOME"
+          which clang clang++ ninja python3 git || true
+          clang --version | head -1 || true
+          python3 --version
+          git --version
+
+      - name: Install prerequisites (clang, ninja, depot_tools)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq clang lld ninja-build python3 ca-certificates
+          git clone --depth 1 https://chromium.googlesource.com/chromium/tools/depot_tools "$HOME/depot_tools"
+          echo "$HOME/depot_tools" >> "$GITHUB_PATH"
+          "$HOME/depot_tools/gn" --version || "$HOME/depot_tools/gn" version 2>&1 | head -5 || true
+
+      - name: Checkout Skia (github mirror) + sync deps
+        run: |
+          set -euo pipefail
+          T0=$(date +%s)
+          mkdir -p "$HOME/skia"
+          cd "$HOME/skia"
+          time git clone --depth 1 https://github.com/google/skia.git .
+          git log -1 --format='skia commit=%H date=%cI'
+          du -sh .
+          T1=$(date +%s)
+          echo "CHECKOUT_SECONDS=$((T1 - T0))"
+          echo "CHECKOUT_SECONDS=$((T1 - T0))" >> "$GITHUB_ENV"
+          # deps sync
+          python3 tools/git-sync-deps
+          T2=$(date +%s)
+          echo "DEPS_SYNC_SECONDS=$((T2 - T1))"
+          echo "DEPS_SYNC_SECONDS=$((T2 - T1))" >> "$GITHUB_ENV"
+          du -sh .
+          ls third_party/externals 2>/dev/null | head -40 || echo "no externals dir"
+
+      - name: gn gen (android arm64)
+        id: gn-gen
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/depot_tools:$PATH"
+          NDK="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          echo "NDK=$NDK"
+          [ -n "$NDK" ] || { echo "FATAL: no NDK found"; exit 1; }
+          cd "$HOME/skia"
+          T0=$(date +%s)
+          bin/gn gen out/android-arm64 --args='
+            target_os="android"
+            target_cpu="arm64"
+            is_debug=false
+            is_official_build=false
+            ndk="'"$NDK"'"
+            skia_use_system_libjpeg_turbo=false
+            skia_use_system_libpng=false
+            skia_use_system_libwebp=false
+            skia_use_system_zlib=false
+            skia_use_system_expat=false
+            skia_use_system_freetype2=false
+            skia_use_system_harfbuzz=false
+            skia_use_system_icu=false
+            skia_use_fontconfig=false
+            skia_use_vulkan=false
+            skia_enable_skshaper=false
+            skia_enable_skottie=false
+            skia_enable_pdf=false
+            skia_enable_tools=false
+          ' > /tmp/gn-gen.log 2>&1
+          T1=$(date +%s)
+          echo "GN_GEN_SECONDS=$((T1 - T0))"
+          echo "GN_GEN_SECONDS=$((T1 - T0))" >> "$GITHUB_ENV"
+          echo "== gn gen OK - args baked: =="
+          cat out/android-arm64/args.gn
+
+      - name: ninja build libskia.a
+        id: ninja
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/depot_tools:$PATH"
+          cd "$HOME/skia"
+          T0=$(date +%s)
+          # tee the whole log so we can paste real errors verbatim
+          ninja -C out/android-arm64 skia 2>&1 | tee /tmp/ninja-skia.log | tail -80
+          RC=${PIPESTATUS[0]}
+          T1=$(date +%s)
+          echo "NINJA_SECONDS=$((T1 - T0))"
+          echo "NINJA_SECONDS=$((T1 - T0))" >> "$GITHUB_ENV"
+          if [ "$RC" -ne 0 ]; then
+            echo "NINJA_FAILED=1" >> "$GITHUB_ENV"
+            echo "ninja exit $RC; see artifact log"
+            grep -nE "error:|FAILED:" /tmp/ninja-skia.log | head -40 || true
+            exit 1
+          fi
+          echo "== build OK =="
+          ls -lh out/android-arm64/*.a out/android-arm64/*.so 2>/dev/null || true
+          du -sh out/android-arm64
+          df -h "$HOME" | tail -1
+
+      - name: Summarize measurements
+        if: always()
+        run: |
+          echo "== real timings =="
+          echo "checkout+deps: ${CHECKOUT_SECONDS:-?}s checkout, ${DEPS_SYNC_SECONDS:-?}s deps"
+          echo "gn gen: ${GN_GEN_SECONDS:-?}s"
+          echo "ninja: ${NINJA_SECONDS:-?}s (libskia.a)"
+          echo "ninja failed: ${NINJA_FAILED:-no}"
+          echo "== disk after =="
+          df -h "$HOME" | tail -1
+          du -sh "$HOME/skia" 2>/dev/null || true
+
+      - name: Upload build logs + artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skia-audit-output
+          path: |
+            /tmp/gn-gen.log
+            /tmp/ninja-skia.log
+            ${{ env.HOME }}/skia/out/android-arm64/*.a
+            ${{ env.HOME }}/skia/out/android-arm64/libskia*.so
+          if-no-files-found: warn
