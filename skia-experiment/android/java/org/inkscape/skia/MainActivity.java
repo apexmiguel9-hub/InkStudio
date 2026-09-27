@@ -38,11 +38,11 @@ public class MainActivity extends Activity {
 
     private GLSurfaceView glView;
 
-    public native boolean nativeInit(int w, int h);
-    public native void nativeDraw();
-    public native void nativePresent();
-    public native void nativeTouch(int action, float x, float y); // 0 down 1 up 2 move
-    public native void nativeSetTool(int tool);
+    public static native boolean nativeInit(int w, int h);
+    public static native void nativeDraw();
+    public static native void nativePresent();
+    public static native void nativeTouch(int action, float x, float y); // 0 down 1 up 2 move
+    public static native void nativeSetTool(int tool);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,14 +53,6 @@ public class MainActivity extends Activity {
         // Keep the toolbar below the status bar / cutout (same as the
         // prototype: "el botón está muy arriba" lesson).
         root.setFitsSystemWindows(true);
-
-        final Toolbox toolbox = new Toolbox(this);
-        toolbox.addTool(TOOL_SELECT, "\u2316  Selector");
-        toolbox.addTool(TOOL_RECT, "\u25A1  Rect\u00E1ngulo");
-        toolbox.addTool(TOOL_NODE, "\u25CF  Nodos");
-        toolbox.select(TOOL_SELECT);
-        root.addView(toolbox, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
         glView = new GLSurfaceView(this);
         glView.setEGLContextClientVersion(2);
@@ -95,6 +87,15 @@ public class MainActivity extends Activity {
             return true;
         });
 
+        // Tool strip goes on top (visual order = addView order).
+        final Toolbox toolbox = new Toolbox(this, glView);
+        toolbox.addTool(TOOL_SELECT, "\u2316  Selector");
+        toolbox.addTool(TOOL_RECT, "\u25A1  Rect\u00E1ngulo");
+        toolbox.addTool(TOOL_NODE, "\u25CF  Nodos");
+        toolbox.select(TOOL_SELECT);
+        root.addView(toolbox, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
         root.addView(glView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1.0f));
 
@@ -105,10 +106,12 @@ public class MainActivity extends Activity {
      *  the selection tracked per-tool id (tag) instead of by button index. */
     private static class Toolbox extends LinearLayout {
         private final List<Button> buttons = new ArrayList<Button>();
+        private final GLSurfaceView surface;
         private int current = -1;
 
-        Toolbox(Context c) {
+        Toolbox(Context c, GLSurfaceView view) {
             super(c);
+            surface = view;
             setOrientation(HORIZONTAL);
             setPadding(dp(8), dp(8), dp(8), dp(8));
             setBackgroundColor(0xFF1E1F26);
@@ -128,7 +131,7 @@ public class MainActivity extends Activity {
                 public void onClick(View v) {
                     select(id);
                     nativeSetTool(id);
-                    glView.requestRender();
+                    surface.requestRender();
                 }
             });
             LayoutParams lp = new LayoutParams(
