@@ -78,10 +78,20 @@ echo "== DT_NEEDED =="
 if "$TC/bin/llvm-readelf" -d "$WORK/lib/arm64-v8a/libskia_app.so" | grep -q "libc++_shared"; then
   echo "ERROR: libskia_app.so still depends on libc++_shared.so"; exit 1
 fi
-# And no allocator-shim remnants (run 12: dlopen cannot locate __real_realpath).
-if "$TC/bin/llvm-nm" -D "$WORK/lib/arm64-v8a/libskia_app.so" | grep -E "U __real_|U __wrap_"; then
-  echo "ERROR: allocator shim symbols still linked into libskia_app.so"; exit 1
+# And no allocator-shim remnants (run 12: dlopen cannot locate __real_realpath)
+# or partition_alloc orphans (runs 12/13: PartitionAddressSpace::setup_,
+# RawPtrBackupRefImpl Acquire/Release — fixed via skia_use_partition_alloc=false).
+# General dlopen gate: any non-platform undefined symbol would crash loadLibrary.
+UND=$("$TC/bin/llvm-nm" -D "$WORK/lib/arm64-v8a/libskia_app.so" \
+  | awk '$2=="U" && $3 !~ /@LIBC$/ {print $3}' \
+  | grep -vE "^(__cxa_|__aarch64_|_Znwm$|_ZdlPv$|_Znam$|_ZdaPv$|_ZNSt6__ndk1_|memcpy$|memset$|memmove$|fmod|fmodf$)" \
+  | grep -vE "^(gl|egl|__android_log_)" || true)
+if [ -n "$UND" ]; then
+  echo "ERROR: unresolved non-platform symbols (dlopen would fail):"
+  echo "$UND"
+  exit 1
 fi
+echo "== dlopen gate OK: no unresolvable symbols =="
 
 # sanity: JNI entry points present?
 "$TC/bin/llvm-nm" -D "$WORK/lib/arm64-v8a/libskia_app.so" | grep "T Java_org_inkscape_skia" || true

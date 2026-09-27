@@ -115,6 +115,14 @@ jobs:
             skia_enable_skottie=false
             skia_enable_pdf=false
             skia_enable_tools=false
+            # m156 defaults skia_use_partition_alloc=true for standalone+clang,
+            # injecting the real partition_alloc raw_ptr into every target
+            # (skia.gni:132, src/partition_alloc/BUILD.gn:19->externals).
+            # Linking that into a shared lib leaves 3 orphan symbols undefined
+            # nowhere (dlopen fails on-device, runs 12/13): PartitionAddressSpace::setup_,
+            # base::RawPtrBackupRefImpl Acquire/ReleaseInternal. Disabling it
+            # switches to skia's own noop raw_ptr stubs.
+            skia_use_partition_alloc=false
           ' > /tmp/gn-gen.log 2>&1
           T1=$(date +%s)
           echo "GN_GEN_SECONDS=$((T1 - T0))"
