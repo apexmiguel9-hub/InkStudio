@@ -33,8 +33,22 @@ rm -rf "$WORK"
 mkdir -p "$WORK/classes" "$WORK/lib/arm64-v8a"
 
 # ---- 1. Native lib: JNI + Skia (Ganesh GL) --------------------------------
-STATICS="$(ls "$SKIA"/out/android-arm64/lib*.a 2>/dev/null | grep -v sse41 | tr '\n' ' ')"
-[ -n "$STATICS" ] || { echo "ERROR: no lib*.a in $SKIA/out/android-arm64 (run gn gen + ninja first)"; exit 1; }
+# Canonical static set. Run 12 crashed on-device (dlopen: cannot locate
+# symbol "__real_realpath") because the old `ls lib*.a | grep -v sse41` glob
+# also linked liballocator_shim/base/core.a (partition_alloc allocator shim)
+# + libraw_ptr.a + libjpeg12/16.a. The shim's allocator_shim_android.o
+# defines __wrap_* and references __real_free/getcwd/realpath which no libc
+# provides -> UnsatisfiedLinkError on device. libskia.a does NOT reference
+# shim symbols (verified: nm libskia.a has no allocator_shim/__wrap undefs),
+# so the canonical set below links clean and ships no shim.
+SKIA_LIBS="libskia libskcms libpng libjpeg libwebp libwuffs libzlib \
+           libfreetype2 libexpat libpiex libdng_sdk libcpu-features"
+STATICS=""
+for L in $SKIA_LIBS; do
+  F="$SKIA/out/android-arm64/$L.a"
+  if [ -f "$F" ]; then STATICS="$STATICS $F"; else echo "WARNING: missing $F"; fi
+done
+[ -n "$STATICS" ] || { echo "ERROR: no static libs found in $SKIA/out/android-arm64"; exit 1; }
 echo "== linking libskia_app.so with statics:"
 echo "$STATICS"
 
@@ -63,6 +77,10 @@ echo "== DT_NEEDED =="
 "$TC/bin/llvm-readelf" -d "$WORK/lib/arm64-v8a/libskia_app.so" | grep NEEDED
 if "$TC/bin/llvm-readelf" -d "$WORK/lib/arm64-v8a/libskia_app.so" | grep -q "libc++_shared"; then
   echo "ERROR: libskia_app.so still depends on libc++_shared.so"; exit 1
+fi
+# And no allocator-shim remnants (run 12: dlopen cannot locate __real_realpath).
+if "$TC/bin/llvm-nm" -D "$WORK/lib/arm64-v8a/libskia_app.so" | grep -E "U __real_|U __wrap_"; then
+  echo "ERROR: allocator shim symbols still linked into libskia_app.so"; exit 1
 fi
 
 # sanity: JNI entry points present?
