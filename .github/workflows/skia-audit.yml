@@ -53,6 +53,12 @@ jobs:
           # (downloads skia/bin/gn), ninja comes from apt.
           /usr/bin/ninja --version
 
+      - name: Set up JDK 17 (javac/d8/apksigner/keytool)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - name: Checkout Skia (github mirror) + sync deps
         run: |
           set -euo pipefail
@@ -188,6 +194,15 @@ jobs:
           # sanity: does the archive hold the JNI symbol?
           "$TC/bin/llvm-nm" -D out/android-arm64/libskiaexperiment.so | grep Java_org_inkscape_skia || true
 
+      - name: Build Skia experiment APK (JNI + Ganesh GL canvas)
+        id: app
+        run: |
+          set -euo pipefail
+          export SKIA_DIR="$HOME/skia"
+          bash skia-experiment/scripts/build_skia_app.sh
+          cp skia-experiment/build/skia-exp-debug.apk /tmp/skia-exp-debug.apk
+          ls -la /tmp/skia-exp-debug.apk
+
       - name: Summarize measurements
         if: always()
         run: |
@@ -208,6 +223,7 @@ jobs:
           path: |
             /tmp/gn-gen.log
             /tmp/ninja-skia.log
+            /tmp/skia-exp-debug.apk
             /home/runner/skia/out/android-arm64/*.a
             /home/runner/skia/out/android-arm64/libskia*.so
           if-no-files-found: warn
