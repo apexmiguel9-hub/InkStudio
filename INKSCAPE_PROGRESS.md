@@ -246,13 +246,43 @@ crosshair del pivot (grab del centro a <40px).
   y `toTvg()` son el pivote único para mapear a pantalla (seam comentado en
   `desktop.h`); nada de offsets de pantalla hardcodeados en las tools.
 
+### Implementación (completa en C++)
+
+| Archivo | Qué añade |
+|---------|-----------|
+| `sham/sp_rect.h/.cpp` | `nodeAt`, `handleAt`, `moveNode`, `moveHandle` (Option 1: shim sobre rect) |
+| `tool/node_tool_port.h/.cpp` | `NodeTool` hereda `ToolBase`; `root_handler`: grab node/handle, drag→move, release→ungrab; se refresca `rect` desde selección en cada press |
+| `renderer.cpp` | `TOOL_NODE=2`, `drawNodeOverlay(SPRect*)`: 8 cuadros 10×10 (stroke #101014) en `docCorners()` + mid-aristas + 4 círculos rotación (r=7, blanco) en esquinas+28px diagonal + crosshair centro |
+| `MainActivity.java` | `TOOL_NODE=2`, botón "◆ Nodos" en toolbox |
+| `CMakeLists.txt` | `node_tool_port.cpp` + `sp_rect.cpp` |
+
+### Estado actual (2026-09-27)
+
+**C++ implementation: COMPLETA** — NodeTool Option 1 compilada y vinculada (CI verde en run 36240268838).
+
+**Bloqueado por bugs de integración Java/C++:**
+
+| Bug | Síntoma | Causa probable |
+|-----|---------|----------------|
+| **Toolbar initial selection** | App lanza con RectTool seleccionado (botón 2), no SelectTool (botón 1). `toolbox.select(TOOL_SELECT)` no resalta botón 1. | Java `Toolbox.select()` usa `i == current` pero `current = id` (tool ID). Índices y tool IDs coinciden (0,1,2), pero visualmente botón 1 (Rect) queda seleccionado. |
+| **SelectTool no selecciona** | Tap en centro de rect → nada ocurre. Sin overlay (cue/handles). | Posibles causas: (a) coordenadas touch no mapean a doc-space del rect, (b) `handleClick` no se ejecuta, (c) `selection.set()` no notifica a `SelTrans`, (d) `SelTrans.visible()` devuelve false. |
+
+**Tiempo real invertido hoy: ~5 h** (implementación C++ NodeTool: ~2.5h; debugging toolbar/selection: ~2.5h).
+
+**Próximos pasos para desbloquear:**
+1. Fixear `Toolbox.select()` en Java (añadir logs o corregir lógica de `current` vs índice).
+2. Verificar que `SelectTool.handleClick` se llama y `selection.set()` actualiza `SelTrans`.
+3. Si `SelTrans` lee directo de `Selection`, checkear `SelTrans.visible()` y `isEmpty()`.
+4. Solo entonces testear `NodeTool` (requiere rect seleccionado).
+
 ### Falta (orden sugerido)
 
-1. Documento XML real (`svg:rect` ↔ SPRect) reemplazando el registry.
-2. Undo/redo (DocumentUndo stub), snapping real, capas.
-3. Más tools con la misma receta (rect_tool_port / select_tool_port como
-   plantillas).
-4. Vulkan (ThorVG wg): fuera de scope de la alpha.
+1. Fixear toolbar + selection (bloqueante actual).
+2. Testear NodeTool Option 1 end-to-end (grab node/handle, drag, release).
+3. Documento XML real (`svg:rect` ↔ SPRect) reemplazando el registry.
+4. Undo/redo (DocumentUndo stub), snapping real, capas.
+5. Más tools con la misma receta.
+6. Vulkan (ThorVG wg): fuera de scope de la alpha.
 
 ---
 
