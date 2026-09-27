@@ -157,15 +157,14 @@ jobs:
           mkdir -p jni
           cat > jni/skia_jni.cpp <<'EOF'
           #include <jni.h>
-          #include <cstdio>
           #include "include/core/SkGraphics.h"
+          #include "include/core/SkMilestone.h"
+          #define STR_(x) #x
+          #define STR(x) STR_(x)
           extern "C" JNIEXPORT jstring JNICALL
           Java_org_inkscape_skia_SkiaNative_version(JNIEnv *env, jobject) {
-              int32_t maj = 0, min = 0, pat = 0;
-              SkGraphics::GetVersion(&maj, &min, &pat);
-              char buf[64];
-              snprintf(buf, sizeof buf, "skia %d.%d.%d", (int)maj, (int)min, (int)pat);
-              return env->NewStringUTF(buf);
+              SkGraphics::Init();  // real API call — proves linking works
+              return env->NewStringUTF("skia milestone " STR(SK_MILESTONE));
           }
           EOF
           # All static libs except the x86-only libwebp_sse41 variant.
