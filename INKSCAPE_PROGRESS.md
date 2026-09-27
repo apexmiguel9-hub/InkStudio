@@ -356,13 +356,54 @@ demasiado, el log real de fallo ES el hallazgo; se para ahí.
 4. **`-lc++_static` no neutraliza** el `libc++_shared.so` por defecto del NDK:
    usar `-static-libstdc++`.
 
-### Comparativa de tamaños (reales, run 15 vs app ThorVG)
+### Comparativa de tamaños — métrica DUAL (artifact CI vs instalado g56) — 2026-09-27
 
-| | Skia app (run 15) | ThorVG prototype |
+**Ambas métricas son reales y complementarias**: el *artifact* es el `.apk`
+tal como sale del CI (bytes del zip); el *instalado* es lo que reporta
+Ajustes→Apps (almacenamiento) en el g56 = `codePath + dataDir`. Medido en el
+dispositivo con `adb shell du -sb` el mismo día; el `base.apk` instalado es
+byte idéntico al artifact. Los 9.79 / 8.17 MB del usuario se reproducen byte a
+byte con el desglose de abajo.
+
+| Métrica | ThorVG (`org.inkscape.alpha`) | Skia (`org.inkscape.skia`, run 18) |
 |---|---|---|
-| .so sin strip | 29 MB | libinkalpha.so 7.15 MB |
-| .so con strip (shipped) | **5.32 MB** | (prototipo no strip) |
-| APK | 2.4 MB | 2.24 MB |
+| APK artifact CI (bytes) | 2,241,037 (2.24 MB) | 2,519,565 (2.40 MB) |
+| base.apk en disco g56 (idéntico al artifact) | 2,241,037 | 2,519,565 |
+| `.so` dentro del APK — comprimido (zip) | 2,227,976 B | 2,508,585 B |
+| `.so` — descomprimido (lo que expande en disco) | **7,500,184 B sin strip** | **5,602,672 B stripped** |
+| `lib/arm64/` extraído en disco (`du -sb`) | 7,507,088 B | 5,609,576 B |
+| `codePath` en disco (`du -sb`, total) | 9,751,577 B | 8,132,593 B |
+| `oat`/dex2oat (derivado: codePath−apk−lib; `du` directo denegado por perms) | ≈ 3,452 B | ≈ 3,452 B |
+| `dataDir` (derivado: cifra Ajustes − codePath) | ≈ 38 KB | ≈ 37 KB |
+| **Instalado Total (Ajustes g56, MB decimal)** | **9.79 MB** | **8.17 MB** |
+| **Radio de expansión (instalado / artifact)** | **4.37x** | **3.40x** |
+| `.so` tras `llvm-strip --strip-all` (lab, sobre el `.so` REAL del g56) | **783,096 B** — 5 exports JNI + DT_NEEDED intactos (readelf) | — (ya shipped stripped) |
+
+**Por qué difieren las proporciones (mecanismo MEDIDO, no suposición):**
+
+1. **El zip viaja comprimido en disco**: el `base.apk` instalado tiene
+   exactamente los bytes del artifact (2,241,037 / 2,519,565). Android no lo
+   descomprime.
+2. **`extractNativeLibs=true`** (dumpsys real, ambas apps): el `.so` se extrae
+   DESCOMPRIMIDO a `lib/arm64/`. **Esa es toda la expansión**: +7.51 MB
+   (ThorVG) / +5.61 MB (Skia). El APK es ~99.8% `.so` (7 entradas: manifest +
+   classes.dex 6.5 KB + lib + res + META-INF; sin assets propios).
+3. **dex2oat/AOT NO es el driver**: el dex son 6,580 B (ThorVG) / 6,300 B
+   (Skia); el `oat` derivado ≈ 3.4 KB en ambas. No hay nada que compilar; los
+   filtros de compilación son "verify" a lo sumo.
+4. **El driver es la política de strip del pipeline**: ThorVG embarca
+   `libinkalpha.so` SIN STRIP (7.50 MB — el prototipo no strippea); Skia ya
+   embarca stripped (5.60 MB) por el gate de la auditoría. Strippando el `.so`
+   real del g56: **7,500,184 → 783,096 B** (6.72 MB de símbolos/depuración
+   eliminados), con los 5 exports JNI y el DT_NEEDED intactos (readelf
+   verificado en el archivo strippado).
+
+**Consecuencia (hecho medido, no opinión)**: con el mismo gate de strip, el
+APK de ThorVG pasaría de 2.24 MB → **≈ 0.32 MB** (el `.so` stripped comprime a
+306,901 B) y su tamaño INSTALADO de 9.79 MB → **≈ 1.15 MB** (783 KB lib +
+320 KB apk + oat + data), es decir **~7x MENOR que Skia (8.17 MB)**. La
+aparente ventaja de Skia en "instalado" (8.17 < 9.79) se invierte por completo:
+es un artefacto del pipeline (strip que a ThorVG le falta), no del motor.
 
 ### Estado tras run 15 (2026-09-27)
 
@@ -406,9 +447,12 @@ demasiado, el log real de fallo ES el hallazgo; se para ahí.
 ### Conclusión de la auditoría Skia (para la decisión de motor)
 
 - **Skia m156 corre una app GL completa con las 3 herramientas en el g56**,
-  con las mismas interacciones que el prototipo ThorVG, a coste de build/
-  tamaño: .so strip 5.34 MB vs ThorVG 7.15 MB sin strip (el APK Skia ~2.5 MB
-  vs 2.24 MB). El dlopen/DT_NEEDED mínimo se logra con la allowlist canónica,
+  con las mismas interacciones que el prototipo ThorVG, a coste de build y de
+  tamaño real: **.so stripped 5.60 MB vs ThorVG 7.50 MB SIN strip** — pero el
+  `.so` de ThorVG strippado pesa 0.78 MB (medido sobre el .so real del g56) →
+  con el mismo gate de strip el instalado de ThorVG ≈ 1.15 MB, ~7x menor que
+  el de Skia (8.17 MB). Ver "Comparativa de tamaños — métrica DUAL" arriba.
+  El dlopen/DT_NEEDED mínimo se logra con la allowlist canónica,
   `-static-libstdc++` y `skia_use_partition_alloc=false`.
 - Sin embargo cada build Skia cuesta ~10-13 min de CI (deps sync ~220-374s +
   ninja ~330s) frente al build ThorVG directo, y la API m156 es data-oriented
