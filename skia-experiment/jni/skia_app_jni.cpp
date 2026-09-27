@@ -23,6 +23,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkSurface.h"
 
+#include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
@@ -112,8 +113,10 @@ Java_org_inkscape_skia_MainActivity_nativeDraw(JNIEnv* env, jobject thiz) {
         }
 
         SkRect rect = SkRect::MakeLTRB(l, t, r, b);
-        SkPath path;
-        path.addRect(rect);
+        // m156: SkPath is data-oriented; classic addRect/moveTo/lineTo are gone.
+        // Verified: include/core/SkPath.h has static factories only (Rect,
+        // Polygon, Line, Raw). https://github.com/google/skia/blob/main/include/core/SkPath.h
+        SkPath path = SkPath::Rect(rect);
 
         SkPaint fill;
         fill.setAntiAlias(true);
