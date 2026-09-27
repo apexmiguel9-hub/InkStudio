@@ -92,6 +92,7 @@ Xf g_grabXf;                          // xform at grab (for rotate delta)
 bool g_moved = false;         // finger exceeded the drag tolerance
 bool g_newSelDown = true;     // DOWN hit a rect that was NOT already selected
 float g_downX = 0, g_downY = 0;
+float g_grabOffX = 0, g_grabOffY = 0;  // finger − grabbed point at DOWN (doc)
 
 // rect tool live drag
 float g_x0 = 0, g_y0 = 0, g_x1 = 0, g_y1 = 0;
@@ -251,10 +252,14 @@ Java_org_inkscape_skia_MainActivity_nativeTouch(JNIEnv* env, jobject thiz,
                 R &r = g_rects[g_sel];
                 if (!g_rotateState) {
                     auto h = scaleHandlePositions(r);
-                    int idx = hitHandle(h, px, py, 18.0f);
+                    int idx = hitHandle(h, px, py, 26.0f);
                     if (idx >= 0) {
                         g_gesture = SCALE_HAND;
                         g_handle = idx;
+                        // grip offset: keep the grabbed point anchored under the
+                        // finger so a plain tap resizes NOTHING
+                        g_grabOffX = px - h[idx].x();
+                        g_grabOffY = py - h[idx].y();
                         return;
                     }
                 } else {
@@ -263,7 +268,7 @@ Java_org_inkscape_skia_MainActivity_nativeTouch(JNIEnv* env, jobject thiz,
                     rotateHandlePositions(r, h, center);
                     for (int i = 0; i < 4; ++i) {
                         float dx = h[i].x() - px, dy = h[i].y() - py;
-                        if (dx * dx + dy * dy <= 18.0f * 18.0f) {
+                        if (dx * dx + dy * dy <= 26.0f * 26.0f) {
                             g_gesture = ROTATE_ITEM;
                             g_grabXf = r.xf;
                             g_cx = center.x();
@@ -298,10 +303,12 @@ Java_org_inkscape_skia_MainActivity_nativeTouch(JNIEnv* env, jobject thiz,
             if (idx >= 0) {
                 g_target = idx;
                 auto h = scaleHandlePositions(g_rects[idx]);
-                int hidx = hitHandle(h, px, py, 18.0f);
+                int hidx = hitHandle(h, px, py, 26.0f);
                 if (hidx >= 0) {
                     g_gesture = NODE_DRAG;
                     g_handle = hidx;
+                    g_grabOffX = px - h[hidx].x();
+                    g_grabOffY = py - h[hidx].y();
                 }
             }
         }
@@ -332,28 +339,58 @@ Java_org_inkscape_skia_MainActivity_nativeTouch(JNIEnv* env, jobject thiz,
             case NODE_DRAG: {
                 int idx = (g_gesture == NODE_DRAG) ? g_target : g_sel;
                 if (idx < 0 || g_handle < 0) break;
+                // resize only once the finger really slides (tap = no change)
+                float ddx = px - g_downX, ddy = py - g_downY;
+                if (ddx * ddx + ddy * ddy <= 8.0f * 8.0f) break;
+                g_moved = true;
                 R &rr = g_rects[idx];
-                // drag point into the rect's LOCAL space
-                float lx = px, ly = py;
+                // dragged point (doc) = finger minus the grip offset, so the
+                // grabbed handle stays exactly where the finger grabbed it
+                float docx = px - g_grabOffX, docy = py - g_grabOffY;
+                float lx = docx, ly = docy;
                 invXf(rr.xf, lx, ly);
-                // corner of the grabbed handle, snap mid-edge -> next corner
-                int corner = (g_handle % 2 == 0) ? g_handle : (g_handle + 1) % 8;
-                // opposite corner stays fixed (local): 0=TL 1=TR 2=BR 3=BL
-                int fix = (corner / 2 + 2) % 4;
-                float fxl = (fix == 0 || fix == 3) ? rr.x : rr.x + rr.w;
-                float fyl = (fix == 0 || fix == 1) ? rr.y : rr.y + rr.h;
-                float l0 = std::min(fxl, lx), l1 = std::max(fxl, lx);
-                float t0 = std::min(fyl, ly), t1 = std::max(fyl, ly);
-                if (l1 - l0 < 8.0f) l1 = l0 + 8.0f;
-                if (t1 - t0 < 8.0f) t1 = t0 + 8.0f;
-                rr.x = l0;
-                rr.y = t0;
-                rr.w = l1 - l0;
-                rr.h = t1 - t0;
+                int h = g_handle;
+                if (h % 2 == 0) {
+                    // corner handle: opposite corner stays fixed (local space)
+                    int c = h / 2;
+                    int fix = (c + 2) % 4;  // 0=TL 1=TR 2=BR 3=BL
+                    float fxl = (fix == 0 || fix == 3) ? rr.x : rr.x + rr.w;
+                    float fyl = (fix == 0 || fix == 1) ? rr.y : rr.y + rr.h;
+                    float l0 = std::min(fxl, lx), l1 = std::max(fxl, lx);
+                    float t0 = std::min(fyl, ly), t1 = std::max(fyl, ly);
+                    if (l1 - l0 < 8.0f) l1 = l0 + 8.0f;
+                    if (t1 - t0 < 8.0f) t1 = t0 + 8.0f;
+                    rr.x = l0;
+                    rr.y = t0;
+                    rr.w = l1 - l0;
+                    rr.h = t1 - t0;
+                } else {
+                    // mid-edge handle: that edge follows the finger, the
+                    // opposite edge stays fixed
+                    int e = h / 2;  // 0=top 1=right 2=bottom 3=left
+                    if (e == 0 || e == 2) {
+                        float fix = (e == 0) ? (rr.y + rr.h) : rr.y;
+                        float y0 = std::min(fix, ly), y1 = std::max(fix, ly);
+                        if (y1 - y0 < 8.0f) y1 = y0 + 8.0f;
+                        rr.y = y0;
+                        rr.h = y1 - y0;
+                    } else {
+                        // e=1 right edge: left stays; e=3 left edge: right stays
+                        float fix = (e == 1) ? rr.x : (rr.x + rr.w);
+                        float x0 = std::min(fix, lx), x1 = std::max(fix, lx);
+                        if (x1 - x0 < 8.0f) x1 = x0 + 8.0f;
+                        rr.x = x0;
+                        rr.w = x1 - x0;
+                    }
+                }
                 break;
             }
             case ROTATE_ITEM: {
                 if (g_sel < 0) break;
+                // plain tap (jitter under tolerance) never rotates
+                float ddx = px - g_downX, ddy = py - g_downY;
+                if (ddx * ddx + ddy * ddy <= 8.0f * 8.0f) break;
+                g_moved = true;
                 float ang = std::atan2(py - g_cy, px - g_cx);
                 float dtheta = ang - g_startAng;
                 // M' = T(C)·R(θ)·T(-C)·M
@@ -442,6 +479,7 @@ Java_org_inkscape_skia_MainActivity_nativeTouch(JNIEnv* env, jobject thiz,
 
 // ---- drawing --------------------------------------------------------------
 static void drawHandleSquares(SkCanvas *canvas, const std::array<SkPoint, 8> &h) {
+    const float HALF = 11.0f;  // 22x22 px grab nodes (were 10px: too small)
     SkPaint sq;
     sq.setAntiAlias(true);
     sq.setStyle(SkPaint::kFill_Style);
@@ -452,7 +490,7 @@ static void drawHandleSquares(SkCanvas *canvas, const std::array<SkPoint, 8> &h)
     edge.setStrokeWidth(1.0f);
     edge.setColor(SkColorSetARGB(255, 0x10, 0x10, 0x14));
     for (auto &p : h) {
-        SkRect r = SkRect::MakeXYWH(p.x() - 5.0f, p.y() - 5.0f, 10.0f, 10.0f);
+        SkRect r = SkRect::MakeXYWH(p.x() - HALF, p.y() - HALF, HALF * 2, HALF * 2);
         canvas->drawRect(r, sq);
         canvas->drawRect(r, edge);
     }
@@ -460,6 +498,7 @@ static void drawHandleSquares(SkCanvas *canvas, const std::array<SkPoint, 8> &h)
 
 static void drawRotateRings(SkCanvas *canvas, const std::array<SkPoint, 4> &rh,
                             const SkPoint &center) {
+    const float RAD = 12.0f;  // bigger grab (was 7px: too small)
     SkPaint ring;
     ring.setAntiAlias(true);
     ring.setStyle(SkPaint::kFill_Style);
@@ -470,8 +509,8 @@ static void drawRotateRings(SkCanvas *canvas, const std::array<SkPoint, 4> &rh,
     edge.setStrokeWidth(1.0f);
     edge.setColor(SkColorSetARGB(255, 0x10, 0x10, 0x14));
     for (auto &p : rh) {
-        canvas->drawCircle(p.x(), p.y(), 7.0f, ring);
-        canvas->drawCircle(p.x(), p.y(), 7.0f, edge);
+        canvas->drawCircle(p.x(), p.y(), RAD, ring);
+        canvas->drawCircle(p.x(), p.y(), RAD, edge);
     }
     SkPaint cross;
     cross.setAntiAlias(true);
