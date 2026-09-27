@@ -146,6 +146,48 @@ jobs:
           du -sh out/android-arm64
           df -h "$HOME" | tail -1
 
+      - name: Link skia into shared lib (JNI stub) + real sizes
+        id: link-so
+        run: |
+          set -euo pipefail
+          NDK="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          TC="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
+          TRIPLE="aarch64-linux-android"
+          cd "$HOME/skia"
+          mkdir -p jni
+          cat > jni/skia_jni.cpp <<'EOF'
+          #include <jni.h>
+          #include "include/core/SkTypes.h"
+          #include "include/core/SkSurface.h"
+          #include "include/core/SkCanvas.h"
+          #include "include/core/SkPaint.h"
+          #include "include/core/SkPath.h"
+          extern "C" JNIEXPORT jstring JNICALL
+          Java_org_inkscape_skia_SkiaNative_version(JNIEnv *env, jobject) {
+              return env->NewStringUTF(SKIA_VERSION_STRING);
+          }
+          EOF
+          # All static libs except the x86-only libwebp_sse41 variant.
+          STATICS="$(ls out/android-arm64/lib*.a | grep -v sse41 | tr '\n' ' ')"
+          echo "== linking with: =="
+          echo "$STATICS"
+          "$TC/bin/${TRIPLE}35-clang++" -std=c++17 -fPIC -shared \
+            -I . -I include \
+            jni/skia_jni.cpp $STATICS \
+            -lEGL -lGLESv2 -landroid -llog -lc++_static \
+            -Wl,--gc-sections \
+            -o out/android-arm64/libskiaexperiment.so
+          echo "== UNSTRIPPED =="
+          ls -lh out/android-arm64/libskiaexperiment.so
+          stat -c%s out/android-arm64/libskiaexperiment.so | awk '{printf "bytes=%d (%.2f MB)\n", $1, $1/1048576}'
+          "$TC/bin/llvm-strip" --strip-unneeded out/android-arm64/libskiaexperiment.so \
+            -o out/android-arm64/libskiaexperiment.stripped.so
+          echo "== STRIPPED =="
+          ls -lh out/android-arm64/libskiaexperiment.stripped.so
+          stat -c%s out/android-arm64/libskiaexperiment.stripped.so | awk '{printf "bytes=%d (%.2f MB)\n", $1, $1/1048576}'
+          # sanity: does the archive hold the JNI symbol?
+          "$TC/bin/llvm-nm" -D out/android-arm64/libskiaexperiment.so | grep Java_org_inkscape_skia || true
+
       - name: Summarize measurements
         if: always()
         run: |
