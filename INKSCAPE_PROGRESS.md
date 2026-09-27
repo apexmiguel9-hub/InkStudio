@@ -295,3 +295,83 @@ crosshair del pivot (grab del centro a <40px).
 - `android/` actual del repo = vía GTK4 abandonada; el prototipo vive en
   `prototype/` aparte.
 - Build por CI (repo InkStudio), no local (sin NDK host).
+
+---
+
+## AUDITORÍA SKIA (migración de motor canvas: ¿ThorVG → Skia?) — 2026-09-27
+
+**Rama**: `alpha-skia-experiment`. **Motor**: Skia m156, commit
+`30ff12f0e3031c536b9b1e4dd073ffe7979f9ecc` (2026-09-27). **Workflow**:
+`.github/workflows/skia-audit.yml` (NDK standalone, gn/ninja, JDK 17).
+
+### Método (evidencia real, nada simulado)
+
+Cada hallazgo proviene de un run real de CI con URL, un APK real instalado por
+adb, o logs literales del dispositivo. Regla del usuario: si Skia pesa
+demasiado, el log real de fallo ES el hallazgo; se para ahí.
+
+### Cronología de runs (auditoría de build, runs 1-7)
+
+1. Sync `git-sync-deps` shallow → race/fallos intermitentes → **`--deep`**.
+2. Build verde (run 4): `libskia.a` 68 MB, statics total 84.9 MB, árbol 13 GB;
+   checkout 5s / deps ~374s / ninja ~328s.
+3. Stub link runs 5-7: `SKIA_VERSION_STRING` → `SkGraphics::Init()`. Stub
+   resultó engañoso (17.02 MB sin strip / 1.73 MB con strip) — no representa
+   una app real.
+
+### Cronología de runs (fase app, runs 8-15) — logs literales
+
+| Run | Resultado | Hallazgo real (verbatim) |
+|-----|-----------|--------------------------|
+| 8 (36348247701) | FAIL | `GrBackendRenderTarget` incompleto (faltaba `gpu/ganesh/GrBackendSurface.h`) + **`no member named 'addRect' in 'SkPath'`** — m156 SkPath es data-oriented: solo fábricas estáticas (`SkPath::Rect/Polygon/Line/Raw`); no hay `moveTo/lineTo/addRect`. Fix: `SkPath::Rect(rect)`. |
+| 9 (36348806732) | FAIL | `incomplete type 'SkColorSpace'` → `#include core/SkColorSpace.h`. |
+| 10 (36349614561) | FAIL | El .so enlazó (29 MB sin strip / 5.4 MB con strip — números reales); `javac MainActivity.java:62 cannot find symbol` (lambda param `View` sin `requestRender`) → `glView.requestRender()`. |
+| 11 (36350443524) | SUCCESS 12m53s | APK 2.4 MB; **crash en dispositivo: `UnsatisfiedLinkError: library "libc++_shared.so" not found`** (DT_NEEDED confirmado; `-lc++_static` no neutraliza el default del NDK) → `-static-libstdc++` + gate DT_NEEDED. |
+| 12 (36351385538) | SUCCESS 10m8s | **crash: `cannot locate symbol "__real_realpath"`** — `nm`: `liballocator_shim.a` (allocator_shim_android.o) define `__wrap_*`/ref `__real_*`; el glob `lib*.a` lo coló → **allowlist canónica** (skia, skcms, png, jpeg, webp, wuffs, zlib, freetype2, expat, piex, dng_sdk, cpu-features) + gate dlopen. |
+| 13 (36352186325) | SUCCESS 13m4s | **crash: `_ZN15partition_alloc8internal21PartitionAddressSpace6setup_E` + `RawPtrBackupRefImpl<false>::AcquireInternal/ReleaseInternal`** — 3 únicos huecos no-plataforma; `setup_` no existe en NINGUNA estática; libskia.a (SkSLParser.o) lo referencia; RawPtrBackupRefImpl débil en libraw_ptr.a (excluida). |
+| 14 (36353162403) | FAIL 6m36s | El arg nuevo no llegó — **un apóstrofe ("skia's") en mi comentario cerró el string `--args='`** → 4 positional extra → `Need exactly one build directory to generate`. Fix: quitar apóstrofe. |
+| 15 (36353580455) | **SUCCESS 9m53s** | Build completo + APK con **`skia_use_partition_alloc=false`** (fuente real: `gn/skia.gni:132` lo activa por defecto en standalone+clang; inyecta raw_ptr real de partition_alloc a todos los targets). **Reales: .so stripped = 5,579,464 B ≈ 5.32 MB; DT_NEEDED solo libs plataforma (EGL/GLESv2/android/log/m/dl/c); 0 símbolos sin resolver no-plataforma (gate verde); APK 2.4 MB.** |
+
+### En dispositivo g56 (verificación visual/pixel del experimento mínimo)
+
+- APK run 15 instalado por adb y **corriendo**: `skiaexp: nativeInit OK
+  2400x1080` (la actividad arrancó en landscape; aceptado para el experimento).
+- Swipe (300,300)→(900,700) → **el rect navy se dibuja y se queda**; el usuario
+  confirmó visualmente el cuadro en pantalla. Hito del experimento mínimo
+  (canvas Ganesh GL + tap→draw) verificado por ojos del usuario.
+
+### Hallazgos m156 relevantes para el producto (NodeTool shim sobre rect)
+
+1. **`SkPath` data-oriented** (m156): sin mutadores clásicos `moveTo/lineTo/
+   addRect` — solo fábricas (`SkPath::Rect`, `Polygon`, `Line`, `Raw`).
+   Impacta cualquier port de código Inkscape que construya paths incremental.
+2. **`skia_use_partition_alloc` default TRUE** en standalone+clang (skia.gni:132)
+   → rompe el dlopen de un .so dinámico con 3 símbolos huérfanos
+   (`PartitionAddressSpace::setup_`, `RawPtrBackupRefImpl::Acquire/Release`).
+   Fix probado: `skia_use_partition_alloc=false` (modo noop de partition_alloc;
+   BUILD.gn:127 confirma el cambio de target).
+3. **allocator shim**: no linkear `lib*.a` con glob — cola
+   `liballocator_shim.a` (define `__wrap_*`, referencia `__real_realpath`).
+   Usar siempre la allowlist canónica + gate `llvm-nm -D` de no-plataforma.
+4. **`-lc++_static` no neutraliza** el `libc++_shared.so` por defecto del NDK:
+   usar `-static-libstdc++`.
+
+### Comparativa de tamaños (reales, run 15 vs app ThorVG)
+
+| | Skia app (run 15) | ThorVG prototype |
+|---|---|---|
+| .so sin strip | 29 MB | libinkalpha.so 7.15 MB |
+| .so con strip (shipped) | **5.32 MB** | (prototipo no strip) |
+| APK | 2.4 MB | 2.24 MB |
+
+### Estado tras run 15 (2026-09-27)
+
+- **Experimento mínimo Skia VERIFICADO en dispositivo** (rect con tap+drag,
+  usuario confirmó). Puente JNI→Ganesh GL estable, dlopen limpio, DT_NEEDED
+  mínimo. `alpha-skia-experiment` empujado: a385f12, 9b30305, dd7b86a, 3b2ed01,
+  9c2699c, c21b99d, 07e87b7, 84644ec.
+- **Run 16 (36354888579, commit d2f32e8)**: port de las 3 herramientas del
+  prototipo ThorVG (Selector con 8 handles escala + 4 nodos rotación por tap
+  siguiente, Rectángulo persistente, Nodos) al app Skia para comparativa justa;
+  toolbar Java portado (fix: selección por tag de tool id), portrait forzado.
+  [Resultado pendiente de verificación en dispositivo.]
