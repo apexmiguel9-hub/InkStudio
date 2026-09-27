@@ -60,8 +60,12 @@ jobs:
           T1=$(date +%s)
           echo "CHECKOUT_SECONDS=$((T1 - T0))"
           echo "CHECKOUT_SECONDS=$((T1 - T0))" >> "$GITHUB_ENV"
-          # deps sync
-          python3 tools/git-sync-deps
+          # deps sync -- run 1 (36343701468) died with a real shallow-clone race:
+          #   fatal: update_ref failed for ref 'HEAD': trying to write ref 'HEAD'
+          #          with nonexistent object 5a74ad24a3fbcfb86060497ead4d109520301e2e
+          # (60+ concurrent shallow clones; git-sync-deps has no -j flag).
+          # Retry with --deep (official full-checkout mode) + skip emsdk.
+          GIT_SYNC_DEPS_SKIP_EMSDK=1 python3 tools/git-sync-deps --deep
           T2=$(date +%s)
           echo "DEPS_SYNC_SECONDS=$((T2 - T1))"
           echo "DEPS_SYNC_SECONDS=$((T2 - T1))" >> "$GITHUB_ENV"
