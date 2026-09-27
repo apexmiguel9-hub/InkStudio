@@ -41,7 +41,8 @@ echo "$STATICS"
 "$TC/bin/${TRIPLE}35-clang++" -std=c++17 -fPIC -shared \
   -I "$SKIA" -I "$SKIA/include" \
   "$ROOT/jni/skia_app_jni.cpp" $STATICS \
-  -lEGL -lGLESv2 -landroid -llog -lc++_static \
+  -lEGL -lGLESv2 -landroid -llog \
+  -static-libstdc++ \
   -Wl,--gc-sections \
   -o "$WORK/lib/arm64-v8a/libskia_app.so"
 
@@ -55,6 +56,14 @@ echo "== STRIPPED (what the APK ships) =="
 ls -lh "$WORK/lib/arm64-v8a/libskia_app.stripped.so"
 stat -c%s "$WORK/lib/arm64-v8a/libskia_app.stripped.so" | awk '{printf "bytes=%d (%.2f MB)\n", $1, $1/1048576}'
 mv -f "$WORK/lib/arm64-v8a/libskia_app.stripped.so" "$WORK/lib/arm64-v8a/libskia_app.so"
+
+# run 11 crashed on-device: UnsatisfiedLinkError "libc++_shared.so not found"
+# (-lc++_static did not neutralize the NDK default). Verify DT_NEEDED now.
+echo "== DT_NEEDED =="
+"$TC/bin/llvm-readelf" -d "$WORK/lib/arm64-v8a/libskia_app.so" | grep NEEDED
+if "$TC/bin/llvm-readelf" -d "$WORK/lib/arm64-v8a/libskia_app.so" | grep -q "libc++_shared"; then
+  echo "ERROR: libskia_app.so still depends on libc++_shared.so"; exit 1
+fi
 
 # sanity: JNI entry points present?
 "$TC/bin/llvm-nm" -D "$WORK/lib/arm64-v8a/libskia_app.so" | grep "T Java_org_inkscape_skia" || true
