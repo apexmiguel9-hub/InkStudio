@@ -59,7 +59,7 @@ public class MainActivity extends Activity {
                 default:                        action = 1; break;  // UP
             }
             nativeTouch(action, event.getX(), event.getY());
-            view.requestRender();
+            glView.requestRender();
             return true;
         });
 
