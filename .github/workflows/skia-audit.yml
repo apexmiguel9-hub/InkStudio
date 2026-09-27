@@ -121,7 +121,7 @@ jobs:
             # Linking that into a shared lib leaves 3 orphan symbols undefined
             # nowhere (dlopen fails on-device, runs 12/13): PartitionAddressSpace::setup_,
             # base::RawPtrBackupRefImpl Acquire/ReleaseInternal. Disabling it
-            # switches to skia's own noop raw_ptr stubs.
+            # switches to the Skia noop raw_ptr stubs.
             skia_use_partition_alloc=false
           ' > /tmp/gn-gen.log 2>&1
           T1=$(date +%s)
